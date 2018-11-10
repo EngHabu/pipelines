@@ -217,7 +217,7 @@ class FlyteCompiler(Compiler):
       package_path: the output workflow tar.gz file path. for example, "~/a.tar.gz"
     """
     workflow = self._compile(pipeline_func)
-    file_name = os.path.join(package_path, 'output.pb')
+    file_name = os.path.join(package_path, '{}.pb'.format(workflow.workflow.id))
     with open(file_name, 'wb') as fd:
       fd.write(workflow.to_flyte_idl().SerializeToString())
     print(file_name)

@@ -44,12 +44,16 @@ def parse_arguments():
                       type=str,
                       required=True,
                       help='local path to the output workflow yaml file.')
+  parser.add_argument('--platform',
+                      type=str,
+                      required=False,
+                      help='Determines platform to target [flyte/argo]. Defaults to argo.')
 
   args = parser.parse_args()
   return args
 
 
-def _compile_pipeline_function(function_name, output_path):
+def _compile_pipeline_function(function_name, output_path, target_platform):
   pipeline_funcs = list(dsl.Pipeline.get_pipeline_functions().keys())
   if len(pipeline_funcs) == 0:
     raise ValueError('A function with @dsl.pipeline decorator is required in the py file.')
@@ -66,27 +70,30 @@ def _compile_pipeline_function(function_name, output_path):
   else:
     pipeline_func = pipeline_funcs[0]
 
-  kfp.compiler.FlyteCompiler().compile(pipeline_func, output_path)
+  if target_platform == 'flyte':
+    kfp.compiler.FlyteCompiler().compile(pipeline_func, output_path)
+  else:
+    kfp.compiler.Compiler().compile(pipeline_func, output_path)
 
 
-def compile_package(package_path, namespace, function_name, output_path):
+def compile_package(package_path, namespace, function_name, output_path, target_platform):
   tmpdir = tempfile.mkdtemp()
   sys.path.insert(0, tmpdir)
   try:
     subprocess.check_call(['python3', '-m', 'pip', 'install', package_path, '-t', tmpdir])
     __import__(namespace)
-    _compile_pipeline_function(function_name, output_path)
+    _compile_pipeline_function(function_name, output_path, target_platform)
   finally:
     del sys.path[0]
     shutil.rmtree(tmpdir)
 
 
-def compile_pyfile(pyfile, function_name, output_path):
+def compile_pyfile(pyfile, function_name, output_path, target_platform):
   sys.path.insert(0, os.path.dirname(pyfile))
   try:
     filename = os.path.basename(pyfile)
     __import__(os.path.splitext(filename)[0])
-    _compile_pipeline_function(function_name, output_path)
+    _compile_pipeline_function(function_name, output_path, target_platform)
   finally:
     del sys.path[0]
 
@@ -101,7 +108,7 @@ def main():
   else:
     if args.namespace is None:
       raise ValueError('--namespace is required for compiling packages.')
-    compile_package(args.package, args.namespace, args.function, args.output)
+    compile_package(args.package, args.namespace, args.function, args.output, args.platform)
 
 
 main()
