@@ -42,7 +42,8 @@ class Compiler(object):
   """
 
   def _sanitize_name(self, name):
-    return re.sub('-+', '-', re.sub('[^-0-9a-z]+', '-', name.lower())).lstrip('-').rstrip('-') #from _make_kubernetes_name
+    return re.sub('-+', '-', re.sub('[^-0-9a-z]+', '-', name.lower())).lstrip('-').rstrip(
+      '-')  # from _make_kubernetes_name
 
   def _param_full_name(self, param):
     if param.op_name:
@@ -94,8 +95,8 @@ class Compiler(object):
     output_parameters = []
     for param in op.outputs.values():
       output_parameters.append({
-          'name': self._param_full_name(param),
-          'valueFrom': {'path': op.file_outputs[param.name]}
+        'name': self._param_full_name(param),
+        'valueFrom': {'path': op.file_outputs[param.name]}
       })
     output_parameters.sort(key=lambda x: x['name'])
 
@@ -157,6 +158,7 @@ class Compiler(object):
               op itself. The list of a given operator is sorted in a way that the farthest
               group is the first and operator itself is the last.
     """
+
     def _get_op_groups_helper(current_groups, ops_to_groups):
       root_group = current_groups[-1]
       for g in root_group.groups:
@@ -181,7 +183,7 @@ class Compiler(object):
       return groups
 
     return _get_groups_helper(root_group)
-        
+
   def _get_uncommon_ancestors(self, op_groups, op1, op2):
     """Helper function to get unique ancestors between two ops.
 
@@ -189,7 +191,7 @@ class Compiler(object):
     [root, G1, G4, op2], then it returns a tuple ([G2, G3, op1], [G4, op2]).
     """
     both_groups = [op_groups[op1.name], op_groups[op2.name]]
-    common_groups_len = sum(1 for x in zip(*both_groups) if x==(x[0],)*len(x))
+    common_groups_len = sum(1 for x in zip(*both_groups) if x == (x[0],) * len(x))
     group1 = op_groups[op1.name][common_groups_len:]
     group2 = op_groups[op2.name][common_groups_len:]
     return (group1, group2)
@@ -219,7 +221,7 @@ class Compiler(object):
         if param.op_name:
           upstream_op = pipeline.ops[param.op_name]
           upstream_groups, downstream_groups = self._get_uncommon_ancestors(
-              op_groups, upstream_op, op)
+            op_groups, upstream_op, op)
           for i, g in enumerate(downstream_groups):
             if i == 0:
               # If it is the first uncommon downstream group, then the input comes from
@@ -235,13 +237,13 @@ class Compiler(object):
               outputs[g].add((full_name, None))
             else:
               # If not last upstream group, output value comes from one of its child.
-              outputs[g].add((full_name, upstream_groups[i+1]))
+              outputs[g].add((full_name, upstream_groups[i + 1]))
         else:
           if not op.is_exit_handler:
             for g in op_groups[op.name]:
               inputs[g].add((full_name, None))
     return inputs, outputs
-    
+
   def _get_condition_params_for_ops(self, root_group):
     """Get parameters referenced in conditions of ops."""
 
@@ -263,7 +265,7 @@ class Compiler(object):
 
     _get_condition_params_for_ops_helper(root_group, [])
     return conditions
-      
+
   def _get_dependencies(self, pipeline, root_group, op_groups):
     """Get dependent groups and ops for all ops and groups.
 
@@ -286,7 +288,7 @@ class Compiler(object):
       for op_name in unstream_op_names:
         upstream_op = pipeline.ops[op_name]
         upstream_groups, downstream_groups = self._get_uncommon_ancestors(
-            op_groups, upstream_op, op)
+          op_groups, upstream_op, op)
         dependencies[downstream_groups[0]].add(upstream_groups[0])
     return dependencies
 
@@ -333,15 +335,15 @@ class Compiler(object):
       # operates in "step" mode where condition is supported.
       only_child = group.groups[0]
       step = {
-          'name': only_child.name,
-          'template': only_child.name,
+        'name': only_child.name,
+        'template': only_child.name,
       }
       if inputs.get(only_child.name, None):
         arguments = []
         for param_name, dependent_name in inputs[only_child.name]:
           arguments.append({
-              'name': param_name,
-              'value': '{{inputs.parameters.%s}}' % param_name
+            'name': param_name,
+            'value': '{{inputs.parameters.%s}}' % param_name
           })
         arguments.sort(key=lambda x: x['name'])
         step['arguments'] = {'parameters': arguments}
@@ -382,13 +384,13 @@ class Compiler(object):
         tasks.append(task)
       tasks.sort(key=lambda x: x['name'])
       template['dag'] = {'tasks': tasks}
-    return template     
+    return template
 
   def _create_new_groups(self, root_group):
     """Create a copy of the input group, and insert extra groups for conditions."""
 
     new_group = copy.deepcopy(root_group)
-    
+
     def _insert_group_for_condition_helper(group):
       for i, g in enumerate(group.groups):
         if g.type == 'condition':
@@ -403,7 +405,7 @@ class Compiler(object):
 
     _insert_group_for_condition_helper(new_group)
     return new_group
-    
+
   def _create_templates(self, pipeline):
     """Create all groups and ops templates in the pipeline."""
 
@@ -463,7 +465,7 @@ class Compiler(object):
       for value in argspec.defaults:
         if not issubclass(type(value), dsl.PipelineParam):
           raise ValueError(
-              'Default values of argument has to be type dsl.PipelineParam or its child.')
+            'Default values of argument has to be type dsl.PipelineParam or its child.')
 
   def _validate_exit_handler(self, pipeline):
     """Makes sure there is only one global exit handler.
@@ -525,7 +527,7 @@ class Compiler(object):
       package_path: the output workflow tar.gz file path. for example, "~/a.tar.gz"
     """
     workflow = self._compile(pipeline_func)
-    yaml.Dumper.ignore_aliases = lambda *args : True
+    yaml.Dumper.ignore_aliases = lambda *args: True
     with tempfile.NamedTemporaryFile() as tmp:
       with open(tmp.name, 'w') as fd:
         yaml.dump(workflow, fd, default_flow_style=False)

@@ -22,30 +22,30 @@ REQUIRES = ['urllib3 >= 1.15', 'six >= 1.10', 'certifi', 'python-dateutil', 'PyY
             'google-cloud-storage == 1.13.0', 'kubernetes == 8.0.0']
 
 setup(
-    name=NAME,
-    version=VERSION,
-    description='KubeFlow Pipelines SDK',
-    author='google',
-    install_requires=REQUIRES,
-    packages=[
-        'kfp',
-        'kfp.compiler',
-        'kfp.components',
-        'kfp.dsl',
-        'kfp.notebook',
-        # 'kfp_experiment',
-        # 'kfp_experiment.api',
-        # 'kfp_experiment.models',
-        # 'kfp_run',
-        # 'kfp_run.api',
-        # 'kfp_run.models',
-        # 'flyteidl==v0.6.5',
-        # 'modelbuilderapi==v1.20.0b4'
-    ],
-    include_package_data=True,
-    entry_points={
-        'console_scripts': [
-            'dsl-compile = kfp.compiler.main:main',
-        ]
-    }
+  name=NAME,
+  version=VERSION,
+  description='KubeFlow Pipelines SDK',
+  author='google',
+  install_requires=REQUIRES,
+  packages=[
+    'kfp',
+    'kfp.compiler',
+    'kfp.components',
+    'kfp.dsl',
+    'kfp.notebook',
+    # 'kfp_experiment',
+    # 'kfp_experiment.api',
+    # 'kfp_experiment.models',
+    # 'kfp_run',
+    # 'kfp_run.api',
+    # 'kfp_run.models',
+    # 'flyteidl==v0.6.5',
+    # 'modelbuilderapi==v1.20.0b4'
+  ],
+  include_package_data=True,
+  entry_points={
+    'console_scripts': [
+      'dsl-compile = kfp.compiler.main:main',
+    ]
+  }
 )
