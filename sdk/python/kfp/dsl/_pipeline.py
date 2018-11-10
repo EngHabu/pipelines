@@ -13,11 +13,10 @@
 # limitations under the License.
 
 
-import re
-import sys
-
 from . import _container_op
 from . import _ops_group
+import re
+import sys
 
 
 def pipeline(name, description):
@@ -33,17 +32,14 @@ def pipeline(name, description):
     ...
   ```
   """
-
   def _pipeline(func):
     Pipeline.add_pipeline(name, description, func)
     return func
 
   return _pipeline
 
-
 def _make_kubernetes_name(name):
-  return re.sub('-+', '-', re.sub('[^-0-9a-z]+', '-', name.lower())).lstrip('-').rstrip('-')
-
+    return re.sub('-+', '-', re.sub('[^-0-9a-z]+', '-', name.lower())).lstrip('-').rstrip('-')
 
 class Pipeline():
   """A pipeline contains a list of operators.
@@ -104,7 +100,7 @@ class Pipeline():
 
   def __exit__(self, *args):
     Pipeline._default_pipeline = None
-
+        
   def add_op(self, op: _container_op.ContainerOp, define_only: bool):
     """Add a new operator.
 
@@ -114,9 +110,9 @@ class Pipeline():
 
     kubernetes_name = _make_kubernetes_name(op.human_name)
     step_id = kubernetes_name
-    # If there is an existing op with this name then generate a new name.
+    #If there is an existing op with this name then generate a new name.
     if step_id in self.ops:
-      for i in range(2, sys.maxsize ** 10):
+      for i in range(2, sys.maxsize**10):
         step_id = kubernetes_name + '-' + str(i)
         if step_id not in self.ops:
           break
