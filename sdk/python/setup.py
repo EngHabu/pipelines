@@ -15,7 +15,6 @@
 
 from setuptools import setup
 
-
 NAME = 'kfp'
 VERSION = '0.1'
 
@@ -29,22 +28,24 @@ setup(
     author='google',
     install_requires=REQUIRES,
     packages=[
-      'kfp',
-      'kfp.compiler',
-      'kfp.components',
-      'kfp.dsl',
-      'kfp.notebook',
-      'kfp_experiment',
-      'kfp_experiment.api',
-      'kfp_experiment.models',
-      'kfp_run',
-      'kfp_run.api',
-      'kfp_run.models',
+        'kfp',
+        'kfp.compiler',
+        'kfp.components',
+        'kfp.dsl',
+        'kfp.notebook',
+        # 'kfp_experiment',
+        # 'kfp_experiment.api',
+        # 'kfp_experiment.models',
+        # 'kfp_run',
+        # 'kfp_run.api',
+        # 'kfp_run.models',
+        # 'flyteidl==v0.6.5',
+        # 'modelbuilderapi==v1.20.0b4'
     ],
     include_package_data=True,
-    entry_points = {
-      'console_scripts': [ 
-        'dsl-compile = kfp.compiler.main:main',
-      ]
+    entry_points={
+        'console_scripts': [
+            'dsl-compile = kfp.compiler.main:main',
+        ]
     }
 )
