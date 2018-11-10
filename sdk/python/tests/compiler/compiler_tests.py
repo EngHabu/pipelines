@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+import kfp.compiler as compiler
+import kfp.dsl as dsl
 import os
 import shutil
 import subprocess
@@ -20,11 +22,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
-
 import yaml
-
-import kfp.compiler as compiler
-import kfp.dsl as dsl
 
 
 class TestCompiler(unittest.TestCase):
@@ -56,7 +54,7 @@ class TestCompiler(unittest.TestCase):
         'parameters': [
           {'name': 'echo-merged',
            'valueFrom': {'path': '/tmp/message.txt'}
-           }],
+          }],
         'artifacts': [{
           'name': 'mlpipeline-ui-metadata',
           'path': '/mlpipeline-ui-metadata.json',
@@ -74,7 +72,7 @@ class TestCompiler(unittest.TestCase):
               'name': 'mlpipeline-minio-artifact',
             }
           }
-        }, {
+        },{
           'name': 'mlpipeline-metrics',
           'path': '/mlpipeline-metrics.json',
           's3': {
@@ -183,8 +181,8 @@ class TestCompiler(unittest.TestCase):
       package_path = os.path.join(tmpdir, 'testsample-0.1.tar.gz')
       target_tar = os.path.join(tmpdir, 'compose.tar.gz')
       subprocess.check_call([
-        'dsl-compile', '--package', package_path, '--namespace', 'mypipeline',
-        '--output', target_tar, '--function', 'download_save_most_frequent_word'])
+          'dsl-compile', '--package', package_path, '--namespace', 'mypipeline',
+          '--output', target_tar, '--function', 'download_save_most_frequent_word'])
       with open(os.path.join(test_data_dir, 'compose.yaml'), 'r') as f:
         golden = yaml.load(f)
       compiled = self._get_yaml_from_tar(target_tar)
@@ -202,7 +200,7 @@ class TestCompiler(unittest.TestCase):
     try:
       target_tar = os.path.join(tmpdir, file_base_name + '.tar.gz')
       subprocess.check_call([
-        'dsl-compile', '--py', py_file, '--output', target_tar])
+          'dsl-compile', '--py', py_file, '--output', target_tar])
       with open(os.path.join(test_data_dir, file_base_name + '.yaml'), 'r') as f:
         golden = yaml.load(f)
       compiled = self._get_yaml_from_tar(target_tar)
@@ -211,7 +209,7 @@ class TestCompiler(unittest.TestCase):
       self.assertEqual(golden, compiled)
     finally:
       shutil.rmtree(tmpdir)
-
+    
   def test_py_compile_basic(self):
     """Test basic sequential pipeline."""
     self._test_py_compile('basic')
@@ -227,3 +225,4 @@ class TestCompiler(unittest.TestCase):
   def test_py_compile_default_value(self):
     """Test a pipeline with a parameter with default value."""
     self._test_py_compile('default_value')
+
