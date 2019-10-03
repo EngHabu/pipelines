@@ -33,14 +33,13 @@ setup(
     'kfp.components',
     'kfp.dsl',
     'kfp.notebook',
+    'flytekit==0.2.0',
     # 'kfp_experiment',
     # 'kfp_experiment.api',
     # 'kfp_experiment.models',
     # 'kfp_run',
     # 'kfp_run.api',
     # 'kfp_run.models',
-    # 'flyteidl==v0.6.5',
-    # 'modelbuilderapi==v1.20.0b4'
   ],
   include_package_data=True,
   entry_points={

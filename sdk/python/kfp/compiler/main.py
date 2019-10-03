@@ -104,7 +104,7 @@ def main():
       (args.py is not None and args.package is not None)):
     raise ValueError('Either --py or --package is needed but not both.')
   if args.py:
-    compile_pyfile(args.py, args.function, args.output)
+    compile_pyfile(args.py, args.function, args.output, args.platform)
   else:
     if args.namespace is None:
       raise ValueError('--namespace is required for compiling packages.')
