@@ -74,7 +74,7 @@ def _compile_pipeline_function(pipeline_funcs, function_name, output_path, targe
     pipeline_func = pipeline_funcs[0]
 
   if target_platform == 'flyte':
-    kfp.compiler.FlyteCompiler().compile(pipeline_func, output_path)
+    kfp.compiler.FlyteCompiler().register(pipeline_func, "v1")
   else:
     kfp.compiler.Compiler().compile(pipeline_func, output_path, type_check)
 
@@ -134,3 +134,6 @@ def main():
       raise ValueError('--namespace is required for compiling packages.')
     compile_package(args.package, args.namespace, args.function, args.output, args.platform, not args.disable_type_check)
   
+
+if __name__ == "__main__":
+  main()

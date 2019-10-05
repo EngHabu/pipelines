@@ -36,6 +36,7 @@ REQUIRES = [
     'tabulate == 0.8.3',
     'click == 7.0',
     'Deprecated',
+    'flytekit>=0.2.0',
 ]
 
 setup(
@@ -54,7 +55,6 @@ setup(
         'kfp.containers',
         'kfp.dsl',
         'kfp.notebook',
-        'flytekit==0.2.0',
     ],
     classifiers=[
         'Intended Audience :: Developers',

@@ -18,6 +18,23 @@ from flytekit.common.core import identifier as _identifier
 from kfp import dsl
 from kfp.compiler import Compiler
 
+import json
+from collections import defaultdict
+import inspect
+import tarfile
+import zipfile
+from typing import Callable, Set, List, Text, Dict, Tuple, Any, Union, Optional
+
+from kfp.dsl import _for_loop
+
+from .. import dsl
+from ._k8s_helper import K8sHelper
+from ._op_to_template import _op_to_template
+from ._default_transformers import add_pod_env
+
+from ..components._structures import InputSpec
+from ..dsl._metadata import _extract_pipeline_metadata
+from ..dsl._ops_group import OpsGroup
 
 class FlyteCompiler(Compiler):
     """DSL Compiler.
@@ -56,7 +73,7 @@ class FlyteCompiler(Compiler):
                 ''
             )
 
-            if param.op_name == '':
+            if not param.op_name or param.op_name == '':
                 binding = promise_common.Input(sdk_type=Types.String, name=param.name)
             else:
                 binding = promise_common.NodeOutput(
@@ -72,35 +89,35 @@ class FlyteCompiler(Compiler):
             )
 
         requests = []
-        if op.cpu_request:
+        if op.container.resources and op.container.resources.cpu_request:
             requests.append(
                 task_model.Resources.ResourceEntry(
                     task_model.Resources.ResourceName.CPU,
-                    op.cpu_request
+                    op.container.resources.cpu_request
                 )
             )
 
-        if op.memory_request:
+        if op.container.resources and op.container.resources.memory_request:
             requests.append(
                 task_model.Resources.ResourceEntry(
                     task_model.Resources.ResourceName.MEMORY,
-                    op.memory_request
+                    op.container.resources.memory_request
                 )
             )
 
         limits = []
-        if op.cpu_limit:
+        if op.container.resources and op.container.resources.cpu_limit:
             limits.append(
                 task_model.Resources.ResourceEntry(
                     task_model.Resources.ResourceName.CPU,
-                    op.cpu_limit
+                    op.container.resources.cpu_limit
                 )
             )
-        if op.memory_limit:
+        if op.container.resources and op.container.resources.memory_limit:
             limits.append(
                 task_model.Resources.ResourceEntry(
                     task_model.Resources.ResourceName.MEMORY,
-                    op.memory_limit
+                    op.container.resources.memory_limit
                 )
             )
 
@@ -150,7 +167,7 @@ class FlyteCompiler(Compiler):
             nodes[node.id] = node
         return tasks, [v for k, v in six.iteritems(nodes)]
 
-    def _create_pipeline_workflow(self, args, pipeline):
+    def _create_pipeline_workflow(self, args, pipeline) -> WorkflowClosure:
         """Create workflow for the pipeline."""
 
         wf_inputs = []
@@ -183,39 +200,76 @@ class FlyteCompiler(Compiler):
         # Create the WorkflowClosure object that wraps both the workflow and its tasks
         return WorkflowClosure(workflow=w, tasks=task_templates)
 
-    def _compile(self, pipeline_func):
-        """
-
-        :param pipeline_func:
-        :rtype: flytekit.models.workflow_closure
-        """
+    def _compile(self, pipeline_func: Callable,
+      pipeline_name: Text=None,
+      pipeline_description: Text=None,
+      params_list: List[dsl.PipelineParam]=None,
+      pipeline_conf: dsl.PipelineConf = None,
+      ) -> WorkflowClosure:
+        """ Internal implementation of create_workflow."""
+        params_list = params_list or []
         argspec = inspect.getfullargspec(pipeline_func)
-        self._validate_args(argspec)
-
-        registered_pipeline_functions = dsl.Pipeline.get_pipeline_functions()
-        if pipeline_func not in registered_pipeline_functions:
-            raise ValueError('Please use a function with @dsl.pipeline decorator.')
-
-        pipeline_name, _ = dsl.Pipeline.get_pipeline_functions()[pipeline_func]
-        pipeline_name = self._sanitize_name(pipeline_name)
 
         # Create the arg list with no default values and call pipeline function.
-        args_list = [dsl.PipelineParam(self._sanitize_name(arg_name))
-                     for arg_name in argspec.args]
-        with dsl.Pipeline(pipeline_name) as p:
+        # Assign type information to the PipelineParam
+        pipeline_meta = _extract_pipeline_metadata(pipeline_func)
+        pipeline_meta.name = pipeline_name or pipeline_meta.name
+        pipeline_meta.description = pipeline_description or pipeline_meta.description
+        pipeline_name = K8sHelper.sanitize_k8s_name(pipeline_meta.name)
+
+        # Need to first clear the default value of dsl.PipelineParams. Otherwise, it
+        # will be resolved immediately in place when being to each component.
+        default_param_values = {}
+        for param in params_list:
+            default_param_values[param.name] = param.value
+            param.value = None
+
+        # Currently only allow specifying pipeline params at one place.
+        if params_list and pipeline_meta.inputs:
+            raise ValueError('Either specify pipeline params in the pipeline function, or in "params_list", but not both.')
+
+
+        args_list = []
+        for arg_name in argspec.args:
+            arg_type = None
+            for input in pipeline_meta.inputs or []:
+                if arg_name == input.name:
+                    arg_type = input.type
+                break
+            args_list.append(dsl.PipelineParam(K8sHelper.sanitize_k8s_name(arg_name), param_type=arg_type))
+
+        with dsl.Pipeline(pipeline_name) as dsl_pipeline:
             pipeline_func(*args_list)
 
-        # Remove when argo supports local exit handler.
-        # self._validate_exit_handler(p)
+        pipeline_conf = pipeline_conf or dsl_pipeline.conf # Configuration passed to the compiler is overriding. Unfortunately, it's not trivial to detect whether the dsl_pipeline.conf was ever modified.
+
+        self._validate_exit_handler(dsl_pipeline)
+        self._sanitize_and_inject_artifact(dsl_pipeline, pipeline_conf)
 
         # Fill in the default values.
-        args_list_with_defaults = [dsl.PipelineParam(self._sanitize_name(arg_name))
-                                   for arg_name in argspec.args]
-        if argspec.defaults:
-            for arg, default in zip(reversed(args_list_with_defaults), reversed(argspec.defaults)):
-                arg.value = default.value
+        args_list_with_defaults = []
+        if pipeline_meta.inputs:
+            args_list_with_defaults = [dsl.PipelineParam(K8sHelper.sanitize_k8s_name(arg_name))
+                                        for arg_name in argspec.args]
+            if argspec.defaults:
+                for arg, default in zip(reversed(args_list_with_defaults), reversed(argspec.defaults)):
+                    arg.value = default.value if isinstance(default, dsl.PipelineParam) else default
+        elif params_list:
+            # Or, if args are provided by params_list, fill in pipeline_meta.
+            for param in params_list:
+                param.value = default_param_values[param.name]
 
-        return self._create_pipeline_workflow(args_list_with_defaults, p)
+            args_list_with_defaults = params_list
+            pipeline_meta.inputs = [
+                InputSpec(
+                    name=param.name,
+                    type=param.param_type,
+                    default=param.value) for param in params_list]
+
+        op_transformers = [add_pod_env]
+        op_transformers.extend(pipeline_conf.op_transformers)
+
+        return self._create_pipeline_workflow(args_list_with_defaults, dsl_pipeline)
 
     def compile(self, pipeline_func, package_path):
         """Compile the given pipeline function into workflow yaml.
@@ -229,3 +283,9 @@ class FlyteCompiler(Compiler):
         with open(file_name, 'wb') as fd:
             fd.write(workflow.to_flyte_idl().SerializeToString())
         print(file_name)
+
+    def register(self, pipeline_func, version: str):
+        w = self._compile(pipeline_func)
+        for t in w.tasks:
+            print(t.register("flyteexamples", "development", t._id.name, version))
+        print(w.workflow.register("flyteexamples", "development", "test_workflow", "v1"))
