@@ -34,10 +34,10 @@ func ToApiExperiment(experiment *model.Experiment) *api.Experiment {
 	}
 }
 
-func ToApiExperiments(experiments []model.Experiment) []*api.Experiment {
+func ToApiExperiments(experiments []*model.Experiment) []*api.Experiment {
 	apiExperiments := make([]*api.Experiment, 0)
 	for _, experiment := range experiments {
-		apiExperiments = append(apiExperiments, ToApiExperiment(&experiment))
+		apiExperiments = append(apiExperiments, ToApiExperiment(experiment))
 	}
 	return apiExperiments
 }
@@ -57,19 +57,66 @@ func ToApiPipeline(pipeline *model.Pipeline) *api.Pipeline {
 			Error: err.Error(),
 		}
 	}
+
+	// TODO(jingzhang36): uncomment when exposing versions to API.
+	// defaultVersion, err := ToApiPipelineVersion(pipeline.DefaultVersion)
+	// if err != nil {
+	// 	return &api.Pipeline{
+	// 		Id:    pipeline.UUID,
+	// 		Error: err.Error(),
+	// 	}
+	// }
+
 	return &api.Pipeline{
 		Id:          pipeline.UUID,
 		CreatedAt:   &timestamp.Timestamp{Seconds: pipeline.CreatedAtInSec},
 		Name:        pipeline.Name,
 		Description: pipeline.Description,
 		Parameters:  params,
+		// DefaultVersion: defaultVersion,
 	}
 }
 
-func ToApiPipelines(pipelines []model.Pipeline) []*api.Pipeline {
+func ToApiPipelineVersion(version *model.PipelineVersion) (*api.PipelineVersion, error) {
+	if version == nil {
+		return nil, nil
+	}
+	params, err := toApiParameters(version.Parameters)
+	if err != nil {
+		return nil, err
+	}
+
+	return &api.PipelineVersion{
+		Id:            version.UUID,
+		Name:          version.Name,
+		CreatedAt:     &timestamp.Timestamp{Seconds: version.CreatedAtInSec},
+		Parameters:    params,
+		CodeSourceUrl: version.CodeSourceUrl,
+		ResourceReferences: []*api.ResourceReference{
+			&api.ResourceReference{
+				Key: &api.ResourceKey{
+					Id:   version.PipelineId,
+					Type: api.ResourceType_PIPELINE,
+				},
+				Relationship: api.Relationship_OWNER,
+			},
+		},
+	}, nil
+}
+
+func ToApiPipelineVersions(versions []*model.PipelineVersion) ([]*api.PipelineVersion, error) {
+	apiVersions := make([]*api.PipelineVersion, 0)
+	for _, version := range versions {
+		v, _ := ToApiPipelineVersion(version)
+		apiVersions = append(apiVersions, v)
+	}
+	return apiVersions, nil
+}
+
+func ToApiPipelines(pipelines []*model.Pipeline) []*api.Pipeline {
 	apiPipelines := make([]*api.Pipeline, 0)
 	for _, pipeline := range pipelines {
-		apiPipelines = append(apiPipelines, ToApiPipeline(&pipeline))
+		apiPipelines = append(apiPipelines, ToApiPipeline(pipeline))
 	}
 	return apiPipelines
 }
@@ -113,15 +160,18 @@ func toApiRun(run *model.Run) *api.Run {
 		}
 	}
 	return &api.Run{
-		CreatedAt:   &timestamp.Timestamp{Seconds: run.CreatedAtInSec},
-		Id:          run.UUID,
-		Metrics:     metrics,
-		Name:        run.DisplayName,
-		Description: run.Description,
-		ScheduledAt: &timestamp.Timestamp{Seconds: run.ScheduledAtInSec},
-		Status:      run.Conditions,
+		CreatedAt:    &timestamp.Timestamp{Seconds: run.CreatedAtInSec},
+		Id:           run.UUID,
+		Metrics:      metrics,
+		Name:         run.DisplayName,
+		StorageState: api.Run_StorageState(api.Run_StorageState_value[run.StorageState]),
+		Description:  run.Description,
+		ScheduledAt:  &timestamp.Timestamp{Seconds: run.ScheduledAtInSec},
+		FinishedAt:   &timestamp.Timestamp{Seconds: run.FinishedAtInSec},
+		Status:       run.Conditions,
 		PipelineSpec: &api.PipelineSpec{
 			PipelineId:       run.PipelineId,
+			PipelineName:     run.PipelineName,
 			WorkflowManifest: run.WorkflowSpecManifest,
 			PipelineManifest: run.PipelineSpecManifest,
 			Parameters:       params,
@@ -130,10 +180,10 @@ func toApiRun(run *model.Run) *api.Run {
 	}
 }
 
-func ToApiRuns(runs []model.Run) []*api.Run {
+func ToApiRuns(runs []*model.Run) []*api.Run {
 	apiRuns := make([]*api.Run, 0)
 	for _, run := range runs {
-		apiRuns = append(apiRuns, toApiRun(&run))
+		apiRuns = append(apiRuns, toApiRun(run))
 	}
 	return apiRuns
 }
@@ -168,6 +218,7 @@ func ToApiJob(job *model.Job) *api.Job {
 		Trigger:        toApiTrigger(job.Trigger),
 		PipelineSpec: &api.PipelineSpec{
 			PipelineId:       job.PipelineId,
+			PipelineName:     job.PipelineName,
 			WorkflowManifest: job.WorkflowSpecManifest,
 			PipelineManifest: job.PipelineSpecManifest,
 			Parameters:       params,
@@ -176,10 +227,10 @@ func ToApiJob(job *model.Job) *api.Job {
 	}
 }
 
-func ToApiJobs(jobs []model.Job) []*api.Job {
+func ToApiJobs(jobs []*model.Job) []*api.Job {
 	apiJobs := make([]*api.Job, 0)
 	for _, job := range jobs {
-		apiJobs = append(apiJobs, ToApiJob(&job))
+		apiJobs = append(apiJobs, ToApiJob(job))
 	}
 	return apiJobs
 }
@@ -203,6 +254,7 @@ func toApiResourceReferences(references []*model.ResourceReference) []*api.Resou
 				Type: toApiResourceType(ref.ReferenceType),
 				Id:   ref.ReferenceUUID,
 			},
+			Name:         ref.ReferenceName,
 			Relationship: toApiRelationship(ref.Relationship),
 		})
 	}

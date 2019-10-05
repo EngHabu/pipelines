@@ -1,7 +1,7 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "run.proto",
+    "title": "backend/api/run.proto",
     "version": "version not set"
   },
   "schemes": [
@@ -72,6 +72,13 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "filter",
+            "description": "A base-64 encoded, JSON-serialized Filter protocol buffer (see\nfilter.proto).",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [
@@ -116,7 +123,67 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/protobufEmpty"
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/apiStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RunService"
+        ]
+      }
+    },
+    "/apis/v1beta1/runs/{id}:archive": {
+      "post": {
+        "operationId": "ArchiveRun",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/apiStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RunService"
+        ]
+      }
+    },
+    "/apis/v1beta1/runs/{id}:unarchive": {
+      "post": {
+        "operationId": "UnarchiveRun",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {}
             }
           },
           "default": {
@@ -214,6 +281,66 @@
         ]
       }
     },
+    "/apis/v1beta1/runs/{run_id}/retry": {
+      "post": {
+        "operationId": "RetryRun",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/apiStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RunService"
+        ]
+      }
+    },
+    "/apis/v1beta1/runs/{run_id}/terminate": {
+      "post": {
+        "operationId": "TerminateRun",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/apiStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RunService"
+        ]
+      }
+    },
     "/apis/v1beta1/runs/{run_id}:reportMetrics": {
       "post": {
         "summary": "ReportRunMetrics reports metrics of a run. Each metric is reported in its\nown transaction, so this API accepts partial failures. Metric can be uniquely\nidentified by (run_id, node_id, name). Duplicate reporting will be\nignored by the API. First reporting wins.",
@@ -299,6 +426,14 @@
       "default": "UNSPECIFIED",
       "description": " - UNSPECIFIED: Default value if not present.\n - RAW: Display value as its raw format.\n - PERCENTAGE: Display value in percentage format."
     },
+    "RunStorageState": {
+      "type": "string",
+      "enum": [
+        "STORAGESTATE_AVAILABLE",
+        "STORAGESTATE_ARCHIVED"
+      ],
+      "default": "STORAGESTATE_AVAILABLE"
+    },
     "apiListRunsResponse": {
       "type": "object",
       "properties": {
@@ -307,6 +442,10 @@
           "items": {
             "$ref": "#/definitions/apiRun"
           }
+        },
+        "total_size": {
+          "type": "integer",
+          "format": "int32"
         },
         "next_page_token": {
           "type": "string"
@@ -343,6 +482,10 @@
         "pipeline_id": {
           "type": "string",
           "description": "Optional input field. The ID of the pipeline user uploaded before."
+        },
+        "pipeline_name": {
+          "type": "string",
+          "description": "Optional output field. The name of the pipeline.\nNot empty if the pipeline id is not empty."
         },
         "workflow_manifest": {
           "type": "string",
@@ -426,6 +569,10 @@
         "key": {
           "$ref": "#/definitions/apiResourceKey"
         },
+        "name": {
+          "type": "string",
+          "description": "The name of the resource that referred to."
+        },
         "relationship": {
           "$ref": "#/definitions/apiRelationship",
           "description": "Required field. The relationship from referred resource to the object."
@@ -452,6 +599,9 @@
           "type": "string",
           "description": "Required input field. Name provided by user,\nor auto generated if run is created by scheduled job. Not unique."
         },
+        "storage_state": {
+          "$ref": "#/definitions/RunStorageState"
+        },
         "description": {
           "type": "string",
           "title": "Optional input field. Describing the purpose of the run"
@@ -476,6 +626,11 @@
           "type": "string",
           "format": "date-time",
           "description": "Output. When this run is scheduled to run. This could be different from\ncreated_at. For example, if a run is from a backfilling job that was\nsupposed to run 2 month ago, the scheduled_at is 2 month ago,\nv.s. created_at is the current time."
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Output. The time this run is finished."
         },
         "status": {
           "type": "string",
@@ -559,11 +714,6 @@
         }
       },
       "description": "`Any` contains an arbitrary serialized protocol buffer message along with a\nURL that describes the type of the serialized message.\n\nProtobuf library provides support to pack/unpack Any values in the form\nof utility functions or additional generated methods of the Any type.\n\nExample 1: Pack and unpack a message in C++.\n\n    Foo foo = ...;\n    Any any;\n    any.PackFrom(foo);\n    ...\n    if (any.UnpackTo(\u0026foo)) {\n      ...\n    }\n\nExample 2: Pack and unpack a message in Java.\n\n    Foo foo = ...;\n    Any any = Any.pack(foo);\n    ...\n    if (any.is(Foo.class)) {\n      foo = any.unpack(Foo.class);\n    }\n\n Example 3: Pack and unpack a message in Python.\n\n    foo = Foo(...)\n    any = Any()\n    any.Pack(foo)\n    ...\n    if any.Is(Foo.DESCRIPTOR):\n      any.Unpack(foo)\n      ...\n\n Example 4: Pack and unpack a message in Go\n\n     foo := \u0026pb.Foo{...}\n     any, err := ptypes.MarshalAny(foo)\n     ...\n     foo := \u0026pb.Foo{}\n     if err := ptypes.UnmarshalAny(any, foo); err != nil {\n       ...\n     }\n\nThe pack methods provided by protobuf library will by default use\n'type.googleapis.com/full.type.name' as the type URL and the unpack\nmethods only use the fully qualified type name after the last '/'\nin the type URL, for example \"foo.bar.com/x/y.z\" will yield type\nname \"y.z\".\n\n\nJSON\n====\nThe JSON representation of an `Any` value uses the regular\nrepresentation of the deserialized, embedded message, with an\nadditional field `@type` which contains the type URL. Example:\n\n    package google.profile;\n    message Person {\n      string first_name = 1;\n      string last_name = 2;\n    }\n\n    {\n      \"@type\": \"type.googleapis.com/google.profile.Person\",\n      \"firstName\": \u003cstring\u003e,\n      \"lastName\": \u003cstring\u003e\n    }\n\nIf the embedded message type is well-known and has a custom JSON\nrepresentation, that representation will be embedded adding a field\n`value` which holds the custom JSON in addition to the `@type`\nfield. Example (for message [google.protobuf.Duration][]):\n\n    {\n      \"@type\": \"type.googleapis.com/google.protobuf.Duration\",\n      \"value\": \"1.212s\"\n    }"
-    },
-    "protobufEmpty": {
-      "type": "object",
-      "description": "service Foo {\n      rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);\n    }\n\nThe JSON representation for `Empty` is empty JSON object `{}`.",
-      "title": "A generic empty message that you can re-use to avoid defining duplicated\nempty messages in your APIs. A typical example is to use it as the request\nor the response type of an API method. For instance:"
     }
   },
   "securityDefinitions": {

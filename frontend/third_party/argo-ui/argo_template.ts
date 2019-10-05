@@ -176,6 +176,13 @@ export interface Inputs {
   parameters?: Parameter[];
 }
 /**
+ * Pod metdata
+ */
+export interface Metadata {
+  annotations?: { [key: string]: string; };
+  labels?: { [key: string]: string; };
+}
+/**
  * Outputs hold parameters, artifacts, and results from a step
  */
 export interface Outputs {
@@ -543,6 +550,11 @@ export interface Template {
    * Inputs describe what inputs parameters and artifacts are supplied to this template
    */
   inputs?: Inputs;
+
+  /**
+   * Metdata sets the pods's metadata, i.e. annotations and labels
+   */
+  metadata?: Metadata;
   /**
    * Name is the name of the template
    */
@@ -629,7 +641,7 @@ export interface Workflow {
   status: WorkflowStatus;
 }
 
-export type NodeType = 'Pod' | 'Steps' | 'StepGroup' | 'DAG' | 'Retry' | 'Skipped';
+export type NodeType = 'Pod' | 'Steps' | 'StepGroup' | 'TaskGroup' | 'DAG' | 'Retry' | 'Skipped';
 
 export interface NodeStatus {
   /**
@@ -869,6 +881,14 @@ export interface DAGTask {
    * Dependencies are name of other targets which this depends on
    */
   dependencies: string[];
+
+  // TODO: This exists in https://github.com/argoproj/argo/blob/master/api/openapi-spec/swagger.json
+  // but not in https://github.com/argoproj/argo-ui/blob/master/src/models/workflows.ts
+  // Perhaps we should generate this definition file from the swagger?
+  /**
+   * When is an expression in which the task should conditionally execute
+   */
+  when?: string;
 }
 
 /**

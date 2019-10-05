@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -ex
 #
 # Copyright 2018 Google LLC
 #
@@ -15,32 +15,16 @@
 # limitations under the License.
 
 
-# The scripts creates a Pipelines client python package.
+# The scripts creates the Kubeflow Pipelines python SDK package.
 #
 # Usage:
-#   ./build.sh [output_dir]
-#
-# Setup:
-#   apt-get update -y
-#   apt-get install --no-install-recommends -y -q default-jdk
-#   wget http://central.maven.org/maven2/io/swagger/swagger-codegen-cli/2.3.1/swagger-codegen-cli-2.3.1.jar -O /tmp/swagger-codegen-cli.jar
+#   ./build.sh [output_file]
 
 
-DIR=$(mktemp -d)
+target_archive_file=${1:-kfp.tar.gz}
 
-# Generate python code from swagger json.
-echo "{\"packageName\": \"kfp_experiment\"}" > /tmp/config.json
-java -jar /tmp/swagger-codegen-cli.jar generate -l python -i ../../backend/api/swagger/experiment.swagger.json -o $DIR -c /tmp/config.json
-echo "{\"packageName\": \"kfp_run\"}" > /tmp/config.json
-java -jar /tmp/swagger-codegen-cli.jar generate -l python -i ../../backend/api/swagger/run.swagger.json -o $DIR -c /tmp/config.json
-rm /tmp/config.json
-
-# Merge generated code with the rest code (setup.py, seira_client, etc).
-cp -r kfp $DIR
-cp ./setup.py $DIR
-
-# Build tarball package.
-cd $DIR
-python setup.py sdist --format=gztar
-cp $DIR/dist/*.tar.gz $1
-rm -rf $DIR
+pushd "$(dirname "$0")"
+dist_dir=$(mktemp -d)
+python setup.py sdist --format=gztar --dist-dir "$dist_dir"
+cp "$dist_dir"/*.tar.gz "$target_archive_file"
+popd

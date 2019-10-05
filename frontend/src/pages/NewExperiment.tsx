@@ -21,10 +21,10 @@ import Input from '../atoms/Input';
 import { ApiExperiment } from '../apis/experiment';
 import { Apis } from '../lib/Apis';
 import { Page } from './Page';
-import { RoutePage } from '../components/Router';
+import { RoutePage, QUERY_PARAMS } from '../components/Router';
 import { TextFieldProps } from '@material-ui/core/TextField';
 import { ToolbarProps } from '../components/Toolbar';
-import { URLParser, QUERY_PARAMS } from '../lib/URLParser';
+import { URLParser } from '../lib/URLParser';
 import { classes, stylesheet } from 'typestyle';
 import { commonCss, padding, fontsize } from '../Css';
 import { logger, errorToMessage } from '../lib/Utils';
@@ -64,16 +64,14 @@ class NewExperiment extends Page<{}, NewExperimentState> {
 
   public getInitialToolbarState(): ToolbarProps {
     return {
-      actions: [],
-      breadcrumbs: [
-        { displayName: 'Experiments', href: RoutePage.EXPERIMENTS },
-        { displayName: 'New experiment', href: RoutePage.NEW_EXPERIMENT }
-      ],
+      actions: {},
+      breadcrumbs: [{ displayName: 'Experiments', href: RoutePage.EXPERIMENTS }],
+      pageTitle: 'New experiment',
     };
   }
 
   public render(): JSX.Element {
-    const { validationError } = this.state;
+    const { description, experimentName, isbeingCreated, validationError } = this.state;
 
     return (
       <div className={classes(commonCss.page, padding(20, 'lr'))}>
@@ -87,12 +85,13 @@ class NewExperiment extends Page<{}, NewExperimentState> {
           </div>
 
           <Input id='experimentName' label='Experiment name' inputRef={this._experimentNameRef}
-            required={true} instance={this} field='experimentName' autoFocus={true} />
+            required={true} onChange={this.handleChange('experimentName')} value={experimentName}
+            autoFocus={true} variant='outlined' />
           <Input id='experimentDescription' label='Description (optional)' multiline={true}
-            instance={this} field='description' height='auto' />
+            onChange={this.handleChange('description')} value={description} variant='outlined' />
 
           <div className={commonCss.flex}>
-            <BusyButton id='createExperimentBtn' disabled={!!validationError} busy={this.state.isbeingCreated}
+            <BusyButton id='createExperimentBtn' disabled={!!validationError} busy={isbeingCreated}
               className={commonCss.buttonAction} title={'Next'}
               onClick={this._create.bind(this)} />
             <Button id='cancelNewExperimentBtn' onClick={() => this.props.history.push(RoutePage.EXPERIMENTS)}>

@@ -50,21 +50,21 @@ func (s *JobServer) GetJob(ctx context.Context, request *api.GetJobRequest) (*ap
 }
 
 func (s *JobServer) ListJobs(ctx context.Context, request *api.ListJobsRequest) (*api.ListJobsResponse, error) {
-	paginationContext, err := ValidatePagination(
-		request.PageToken, int(request.PageSize), model.GetJobTablePrimaryKeyColumn(),
-		request.SortBy, jobModelFieldsBySortableAPIFields)
+	opts, err := validatedListOptions(&model.Job{}, request.PageToken, int(request.PageSize), request.SortBy, request.Filter)
+
 	if err != nil {
-		return nil, util.Wrap(err, "Validating pagination failed.")
+		return nil, util.Wrap(err, "Failed to create list options")
 	}
+
 	filterContext, err := ValidateFilter(request.ResourceReferenceKey)
 	if err != nil {
 		return nil, util.Wrap(err, "Validating filter failed.")
 	}
-	jobs, nextPageToken, err := s.resourceManager.ListJobs(filterContext, paginationContext)
+	jobs, total_size, nextPageToken, err := s.resourceManager.ListJobs(filterContext, opts)
 	if err != nil {
 		return nil, util.Wrap(err, "Failed to list jobs.")
 	}
-	return &api.ListJobsResponse{Jobs: ToApiJobs(jobs), NextPageToken: nextPageToken}, nil
+	return &api.ListJobsResponse{Jobs: ToApiJobs(jobs), TotalSize: int32(total_size), NextPageToken: nextPageToken}, nil
 }
 
 func (s *JobServer) EnableJob(ctx context.Context, request *api.EnableJobRequest) (*empty.Empty, error) {
@@ -85,10 +85,6 @@ func (s *JobServer) DeleteJob(ctx context.Context, request *api.DeleteJobRequest
 
 func (s *JobServer) validateCreateJobRequest(request *api.CreateJobRequest) error {
 	job := request.Job
-	// Job must be created under an experiment.
-	if err := ValidateExperimentResourceReference(s.resourceManager, job.ResourceReferences); err != nil {
-		return util.Wrap(err, "The job must have a valid experiment resource reference.")
-	}
 
 	if err := ValidatePipelineSpec(s.resourceManager, job.PipelineSpec); err != nil {
 		return util.Wrap(err, "The pipeline spec is invalid.")

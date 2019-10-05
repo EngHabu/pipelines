@@ -1,17 +1,17 @@
 # Kubeflow pipeline components
 
 Kubeflow pipeline components are implementations of Kubeflow pipeline tasks. Each task takes
-one or more [artifacts](https://github.com/kubeflow/pipelines/wiki/Concepts#step-output-artifacts)
+one or more [artifacts](https://www.kubeflow.org/docs/pipelines/overview/concepts/output-artifact/)
 as input and may produce one or more
-[artifacts](https://github.com/kubeflow/pipelines/wiki/Concepts#step-output-artifacts) as output.
+[artifacts](https://www.kubeflow.org/docs/pipelines/overview/concepts/output-artifact/) as output.
 
 
 **Example: XGBoost DataProc components**
-* [Set up cluster](dataproc/xgboost/create_cluster.py)
-* [Analyze](dataproc/xgboost/analyze.py)
-* [Transform](dataproc/xgboost/transform.py)
-* [Distributed train](dataproc/xgboost/train.py)
-* [Delete cluster](dataproc/xgboost/delete_cluster.py)
+* [Set up cluster](deprecated/dataproc/create_cluster/src/create_cluster.py)
+* [Analyze](deprecated/dataproc/analyze/src/analyze.py)
+* [Transform](deprecated/dataproc/transform/src/transform.py)
+* [Distributed train](deprecated/dataproc/train/src/train.py)
+* [Delete cluster](deprecated/dataproc/delete_cluster/src/delete_cluster.py)
 
 Each task usually includes two parts:
 
@@ -31,4 +31,5 @@ Note the naming convention for client code and runtime code&mdash;for a task nam
 * The `mytask.py` program contains the client code.
 * The `mytask` directory contains all the runtime code.
 
-See [how to build your own components](https://github.com/kubeflow/pipelines/wiki/Build-Your-Own-Component)
+See how to [use the Kubeflow Pipelines SDK](https://www.kubeflow.org/docs/pipelines/sdk/sdk-overview/)
+and [build your own components](https://www.kubeflow.org/docs/pipelines/sdk/build-component/).

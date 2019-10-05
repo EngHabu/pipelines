@@ -7,7 +7,7 @@ inputs:
 outputs:
 - {name: Output, type: float}
 implementation:
-  dockerContainer:
+  container:
     image: python:3.5
     command:
     - python
@@ -29,7 +29,7 @@ implementation:
 
       import fire
       fire.Fire(add_wrapper)
-    arguments:
-    - {value: a}
-    - {value: b}
-    - {output: Output}
+    args:
+    - {inputValue: a}
+    - {inputValue: b}
+    - {outputPath: Output}

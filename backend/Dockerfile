@@ -1,46 +1,65 @@
-FROM golang:alpine as builder
+FROM l.gcr.io/google/bazel:0.24.0 as builder
 
-RUN apk add --no-cache curl git
-RUN curl -fsSL -o /bin/dep https://github.com/golang/dep/releases/download/v0.5.0/dep-linux-amd64 && chmod +x /bin/dep
-
-# Download and install the latest release of dep
-ADD https://github.com/golang/dep/releases/download/v0.5.0/dep-linux-amd64 /usr/bin/dep
-RUN chmod +x /usr/bin/dep
-
+RUN apt-get update && \
+  apt-get install -y cmake clang musl-dev openssl
 WORKDIR /go/src/github.com/kubeflow/pipelines
+
 COPY . .
 
-# Needed for github.com/mattn/go-sqlite3
-RUN apk add --update gcc musl-dev
-RUN go build -o /bin/apiserver backend/src/apiserver/*.go
+ARG google_application_credentials
+ARG use_remote_build=false
 
-FROM python:3.5.0-slim as compiler
+# RUN bazel build -c opt --action_env=PATH --define=grpc_no_ares=true backend/src/apiserver:apiserver
+RUN if [ "$use_remote_build" = "true" ]; then \
+    echo "Using remote build execution ..." && \
+    printf "%s" "$google_application_credentials"  > /credentials.json && \
+    bazel --bazelrc=tools/bazel_builder/bazelrc \
+      build -c opt backend/src/apiserver:apiserver --config=remote \
+      --google_credentials=/credentials.json; \
+  else \
+    echo "Using local build execution..." && \
+    bazel --bazelrc=tools/bazel_builder/bazelrc \
+      build -c opt backend/src/apiserver:apiserver; \
+  fi
 
-# This is hard coded to 0.0.26. Once kfp DSK release process is automated,
-# we can dynamically refer to the version from same commit SHA.
-RUN pip install https://storage.googleapis.com/ml-pipeline/release/0.0.26/kfp-0.0.26.tar.gz --upgrade
+# Compile
+FROM python:3.5 as compiler
+
+WORKDIR /go/src/github.com/kubeflow/pipelines
+COPY sdk sdk
+WORKDIR /go/src/github.com/kubeflow/pipelines/sdk/python
+RUN python3 setup.py install
+
 WORKDIR /samples
 COPY ./samples .
-RUN  find . -maxdepth 2 -name "*.py" -exec dsl-compile --py {} --output {}.tar.gz \;
 
-FROM alpine
+#We need to check that all samples have been compiled without error.
+#For find program, the -exec argument is a filter predicate just like -name. It only affects whether the file is "found", not the find's exit code.
+#One way to solve this problem is to check whether we have any python pipelines that cannot compile. Here the exit code is the number of such files:
+#RUN  bash -e -c 'exit $(find . -maxdepth 2 -name "*.py" ! -exec dsl-compile --py {} --output {}.tar.gz \; -print | wc -l)'
+#I think it's better to just use a shell loop though.
+#RUN  for pipeline in $(find . -maxdepth 2 -name '*.py' -type f); do dsl-compile --py "$pipeline" --output "$pipeline.tar.gz"; done
+#The "for" loop breaks on all whitespace, so we either need to override IFS or use the "read" command instead.
+RUN  set -e; find core -maxdepth 2 -name '*.py' -type f | while read pipeline; do dsl-compile --py "$pipeline" --output "$pipeline.tar.gz"; done
+
+FROM debian:stretch
 
 ARG COMMIT_SHA=unknown
 ENV COMMIT_SHA=${COMMIT_SHA}
 
 WORKDIR /bin
 
-COPY --from=builder /bin/apiserver /bin/apiserver
-COPY --from=builder /go/src/github.com/kubeflow/pipelines/third_party/license.txt /bin/license.txt
+COPY third_party/license.txt /bin/license.txt
+COPY --from=builder /go/src/github.com/kubeflow/pipelines/bazel-bin/backend/src/apiserver/linux_amd64_stripped/apiserver  /bin/apiserver
 COPY backend/src/apiserver/config/ /config
 
 COPY --from=compiler /samples/ /samples/
 
 # Adding CA certificate so API server can download pipeline through URL
-RUN apk add ca-certificates
+RUN apt-get update && apt-get install -y ca-certificates
 
 # Expose apiserver port
 EXPOSE 8888
 
 # Start the apiserver
-CMD apiserver --config=/config --sampleconfig=/config/sample_config.json
+CMD apiserver --config=/config --sampleconfig=/config/sample_config.json -logtostderr=true

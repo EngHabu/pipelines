@@ -17,12 +17,13 @@
 import * as React from 'react';
 import NewExperiment from './NewExperiment';
 import TestUtils from '../TestUtils';
-import { shallow } from 'enzyme';
+import { shallow, ReactWrapper, ShallowWrapper } from 'enzyme';
 import { PageProps } from './Page';
 import { Apis } from '../lib/Apis';
-import { RoutePage } from '../components/Router';
+import { RoutePage, QUERY_PARAMS } from '../components/Router';
 
 describe('NewExperiment', () => {
+  let tree: ReactWrapper | ShallowWrapper;
   const createExperimentSpy = jest.spyOn(Apis.experimentServiceApi, 'createExperiment');
   const historyPushSpy = jest.fn();
   const updateDialogSpy = jest.fn();
@@ -53,39 +54,35 @@ describe('NewExperiment', () => {
     createExperimentSpy.mockImplementation(() => ({ id: 'new-experiment-id' }));
   });
 
-  it('renders the new experiment page', () => {
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+  afterEach(() => tree.unmount());
 
+  it('renders the new experiment page', () => {
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
     expect(tree).toMatchSnapshot();
-    tree.unmount();
   });
 
   it('does not include any action buttons in the toolbar', () => {
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
 
     expect(updateToolbarSpy).toHaveBeenCalledWith({
-      actions: [],
-      breadcrumbs: [
-        { displayName: 'Experiments', href: RoutePage.EXPERIMENTS },
-        { displayName: 'New experiment', href: RoutePage.NEW_EXPERIMENT }
-      ],
+      actions: {},
+      breadcrumbs: [{ displayName: 'Experiments', href: RoutePage.EXPERIMENTS }],
+      pageTitle: 'New experiment',
     });
-    tree.unmount();
   });
 
-  it('Enables the \'Next\' button when an experiment name is entered', () => {
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+  it('enables the \'Next\' button when an experiment name is entered', () => {
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
     expect(tree.find('#createExperimentBtn').props()).toHaveProperty('disabled', true);
 
     (tree.instance() as any).handleChange('experimentName')({ target: { value: 'experiment name' } });
 
     expect(tree.find('#createExperimentBtn').props()).toHaveProperty('disabled', false);
     expect(tree).toMatchSnapshot();
-    tree.unmount();
   });
 
-  it('Re-disables the \'Next\' button when an experiment name is cleared after having been entered', () => {
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+  it('re-disables the \'Next\' button when an experiment name is cleared after having been entered', () => {
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
     expect(tree.find('#createExperimentBtn').props()).toHaveProperty('disabled', true);
 
     (tree.instance() as any).handleChange('experimentName')({ target: { value: 'experiment name' } });
@@ -94,11 +91,10 @@ describe('NewExperiment', () => {
     (tree.instance() as any).handleChange('experimentName')({ target: { value: '' } });
     expect(tree.find('#createExperimentBtn').props()).toHaveProperty('disabled', true);
     expect(tree).toMatchSnapshot();
-    tree.unmount();
   });
 
-  it('Updates the experiment name', () => {
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+  it('updates the experiment name', () => {
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
     (tree.instance() as any).handleChange('experimentName')({ target: { value: 'experiment name' } });
 
     expect(tree.state()).toEqual({
@@ -107,11 +103,10 @@ describe('NewExperiment', () => {
       isbeingCreated: false,
       validationError: '',
     });
-    tree.unmount();
   });
 
-  it('Updates the experiment description', () => {
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+  it('updates the experiment description', () => {
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
     (tree.instance() as any).handleChange('description')({ target: { value: 'a description!' } });
 
     expect(tree.state()).toEqual({
@@ -120,11 +115,10 @@ describe('NewExperiment', () => {
       isbeingCreated: false,
       validationError: 'Experiment name is required',
     });
-    tree.unmount();
   });
 
   it('sets the page to a busy state upon clicking \'Next\'', async () => {
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
 
     (tree.instance() as any).handleChange('experimentName')({ target: { value: 'experiment-name' } });
 
@@ -133,11 +127,10 @@ describe('NewExperiment', () => {
 
     expect(tree.state()).toHaveProperty('isbeingCreated', true);
     expect(tree.find('#createExperimentBtn').props()).toHaveProperty('busy', true);
-    tree.unmount();
   });
 
   it('calls the createExperiment API with the new experiment upon clicking \'Next\'', async () => {
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
 
     (tree.instance() as any).handleChange('experimentName')({ target: { value: 'experiment name' } });
     (tree.instance() as any).handleChange('description')({ target: { value: 'experiment description' } });
@@ -149,38 +142,38 @@ describe('NewExperiment', () => {
       description: 'experiment description',
       name: 'experiment name',
     });
-    tree.unmount();
   });
 
   it('navigates to NewRun page upon successful creation', async () => {
     const experimentId = 'test-exp-id-1';
     createExperimentSpy.mockImplementation(() => ({ id: experimentId }));
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
 
     (tree.instance() as any).handleChange('experimentName')({ target: { value: 'experiment-name' } });
 
     tree.find('#createExperimentBtn').simulate('click');
+    await createExperimentSpy;
     await TestUtils.flushPromises();
 
     expect(historyPushSpy).toHaveBeenCalledWith(
       RoutePage.NEW_RUN
       + `?experimentId=${experimentId}`
       + `&firstRunInExperiment=1`);
-    tree.unmount();
   });
 
   it('includes pipeline ID in NewRun page query params if present', async () => {
     const experimentId = 'test-exp-id-1';
     createExperimentSpy.mockImplementation(() => ({ id: experimentId }));
 
-    const pipelineId = 'pipelineId=some-pipeline-id';
+    const pipelineId = 'some-pipeline-id';
     const props = generateProps();
-    props.location.search = `?pipelineId=${pipelineId}`;
-    const tree = shallow(<NewExperiment {...props as any} />);
+    props.location.search = `?${QUERY_PARAMS.pipelineId}=${pipelineId}`;
+    tree = shallow(<NewExperiment {...props as any} />);
 
     (tree.instance() as any).handleChange('experimentName')({ target: { value: 'experiment-name' } });
 
     tree.find('#createExperimentBtn').simulate('click');
+    await createExperimentSpy;
     await TestUtils.flushPromises();
 
     expect(historyPushSpy).toHaveBeenCalledWith(
@@ -188,11 +181,10 @@ describe('NewExperiment', () => {
       + `?experimentId=${experimentId}`
       + `&pipelineId=${pipelineId}`
       + `&firstRunInExperiment=1`);
-    tree.unmount();
   });
 
   it('shows snackbar confirmation after experiment is created', async () => {
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
 
     (tree.instance() as any).handleChange('experimentName')({ target: { value: 'experiment-name' } });
 
@@ -204,49 +196,49 @@ describe('NewExperiment', () => {
       message: 'Successfully created new Experiment: experiment-name',
       open: true,
     });
-    tree.unmount();
   });
 
   it('unsets busy state when creation fails', async () => {
+    // Don't actually log to console.
     // tslint:disable-next-line:no-console
     console.error = jest.spyOn(console, 'error').mockImplementation();
 
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
 
     (tree.instance() as any).handleChange('experimentName')({ target: { value: 'experiment-name' } });
 
     TestUtils.makeErrorResponseOnce(createExperimentSpy, 'test error!');
     tree.find('#createExperimentBtn').simulate('click');
+    await createExperimentSpy;
     await TestUtils.flushPromises();
 
     expect(tree.state()).toHaveProperty('isbeingCreated', false);
-    tree.unmount();
   });
 
   it('shows error dialog when creation fails', async () => {
+    // Don't actually log to console.
     // tslint:disable-next-line:no-console
     console.error = jest.spyOn(console, 'error').mockImplementation();
 
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
 
     (tree.instance() as any).handleChange('experimentName')({ target: { value: 'experiment-name' } });
 
     TestUtils.makeErrorResponseOnce(createExperimentSpy, 'test error!');
     tree.find('#createExperimentBtn').simulate('click');
+    await createExperimentSpy;
     await TestUtils.flushPromises();
 
     const call = updateDialogSpy.mock.calls[0][0];
     expect(call).toHaveProperty('title', 'Experiment creation failed');
     expect(call).toHaveProperty('content', 'test error!');
-    tree.unmount();
   });
 
   it('navigates to experiment list page upon cancellation', async () => {
-    const tree = shallow(<NewExperiment {...generateProps() as any} />);
+    tree = shallow(<NewExperiment {...generateProps() as any} />);
     tree.find('#cancelNewExperimentBtn').simulate('click');
     await TestUtils.flushPromises();
 
     expect(historyPushSpy).toHaveBeenCalledWith(RoutePage.EXPERIMENTS);
-    tree.unmount();
   });
 });

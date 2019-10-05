@@ -19,7 +19,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/storage"
 	"github.com/kubeflow/pipelines/backend/src/common/util"
-	scheduledworkflowclient "github.com/kubeflow/pipelines/backend/src/crd/pkg/client/clientset/versioned/typed/scheduledworkflow/v1alpha1"
+	scheduledworkflowclient "github.com/kubeflow/pipelines/backend/src/crd/pkg/client/clientset/versioned/typed/scheduledworkflow/v1beta1"
+	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 const (
@@ -33,15 +34,18 @@ type FakeClientManager struct {
 	jobStore                    storage.JobStoreInterface
 	runStore                    storage.RunStoreInterface
 	resourceReferenceStore      storage.ResourceReferenceStoreInterface
+	dBStatusStore               storage.DBStatusStoreInterface
+	defaultExperimentStore      storage.DefaultExperimentStoreInterface
 	objectStore                 storage.ObjectStoreInterface
 	workflowClientFake          *FakeWorkflowClient
 	scheduledWorkflowClientFake *FakeScheduledWorkflowClient
+	podClientFake               v1.PodInterface
 	time                        util.TimeInterface
 	uuid                        util.UUIDGeneratorInterface
 }
 
 func NewFakeClientManager(time util.TimeInterface, uuid util.UUIDGeneratorInterface) (
-	*FakeClientManager, error) {
+		*FakeClientManager, error) {
 
 	if time == nil {
 		glog.Fatalf("The time parameter must not be null.") // Must never happen
@@ -57,6 +61,7 @@ func NewFakeClientManager(time util.TimeInterface, uuid util.UUIDGeneratorInterf
 		return nil, err
 	}
 
+	// TODO(neuromage): Pass in metadata.Store instance for tests as well.
 	return &FakeClientManager{
 		db:                          db,
 		experimentStore:             storage.NewExperimentStore(db, time, uuid),
@@ -65,8 +70,11 @@ func NewFakeClientManager(time util.TimeInterface, uuid util.UUIDGeneratorInterf
 		runStore:                    storage.NewRunStore(db, time),
 		workflowClientFake:          NewWorkflowClientFake(),
 		resourceReferenceStore:      storage.NewResourceReferenceStore(db),
+		dBStatusStore:               storage.NewDBStatusStore(db),
+		defaultExperimentStore:      storage.NewDefaultExperimentStore(db),
 		objectStore:                 storage.NewFakeObjectStore(),
 		scheduledWorkflowClientFake: NewScheduledWorkflowClientFake(),
+		podClientFake:               FakePodClient{},
 		time:                        time,
 		uuid:                        uuid,
 	}, nil
@@ -121,8 +129,20 @@ func (f *FakeClientManager) ResourceReferenceStore() storage.ResourceReferenceSt
 	return f.resourceReferenceStore
 }
 
+func (f *FakeClientManager) DBStatusStore() storage.DBStatusStoreInterface {
+	return f.dBStatusStore
+}
+
+func (f *FakeClientManager) DefaultExperimentStore() storage.DefaultExperimentStoreInterface {
+	return f.defaultExperimentStore
+}
+
 func (f *FakeClientManager) ScheduledWorkflow() scheduledworkflowclient.ScheduledWorkflowInterface {
 	return f.scheduledWorkflowClientFake
+}
+
+func (f *FakeClientManager) PodClient() v1.PodInterface {
+	return f.podClientFake
 }
 
 func (f *FakeClientManager) Close() error {

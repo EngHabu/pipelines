@@ -15,6 +15,9 @@
  */
 
 import * as React from 'react';
+import Archive from '../pages/Archive';
+import ArtifactList from '../pages/ArtifactList';
+import ArtifactDetails from '../pages/ArtifactDetails';
 import Banner, { BannerProps } from '../components/Banner';
 import Button from '@material-ui/core/Button';
 import Compare from '../pages/Compare';
@@ -22,13 +25,16 @@ import Dialog from '@material-ui/core/Dialog';
 import DialogActions from '@material-ui/core/DialogActions';
 import DialogContent from '@material-ui/core/DialogContent';
 import DialogTitle from '@material-ui/core/DialogTitle';
+import ExecutionList from '../pages/ExecutionList';
+import ExecutionDetails from '../pages/ExecutionDetails';
 import ExperimentDetails from '../pages/ExperimentDetails';
 import ExperimentsAndRuns, { ExperimentsAndRunsTab } from '../pages/ExperimentsAndRuns';
 import NewExperiment from '../pages/NewExperiment';
 import NewRun from '../pages/NewRun';
+import Page404 from '../pages/404';
 import PipelineDetails from '../pages/PipelineDetails';
 import PipelineList from '../pages/PipelineList';
-import RecurringRunConfig from '../pages/RecurringRunDetails';
+import RecurringRunDetails from '../pages/RecurringRunDetails';
 import RunDetails from '../pages/RunDetails';
 import SideNav from './SideNav';
 import Snackbar, { SnackbarProps } from '@material-ui/core/Snackbar';
@@ -43,24 +49,61 @@ const css = stylesheet({
   },
 });
 
+export enum QUERY_PARAMS {
+  cloneFromRun = 'cloneFromRun',
+  cloneFromRecurringRun = 'cloneFromRecurringRun',
+  experimentId = 'experimentId',
+  isRecurring = 'recurring',
+  firstRunInExperiment = 'firstRunInExperiment',
+  pipelineId = 'pipelineId',
+  fromRunId = 'fromRun',
+  runlist = 'runlist',
+  view = 'view',
+}
+
 export enum RouteParams {
   experimentId = 'eid',
   pipelineId = 'pid',
   runId = 'rid',
+  ARTIFACT_TYPE = 'artifactType',
+  EXECUTION_TYPE = 'executionType',
+  // TODO: create one of these for artifact and execution?
+  ID = 'id',
 }
 
 // tslint:disable-next-line:variable-name
+export const RoutePrefix = {
+  ARTIFACT: '/artifact',
+  EXECUTION: '/execution',
+  RECURRING_RUN: '/recurringrun',
+};
+
+// tslint:disable-next-line:variable-name
 export const RoutePage = {
+  ARCHIVE: '/archive',
+  ARTIFACTS: '/artifacts',
+  ARTIFACT_DETAILS: `/artifact_types/:${RouteParams.ARTIFACT_TYPE}+/artifacts/:${RouteParams.ID}`,
   COMPARE: `/compare`,
+  EXECUTIONS: '/executions',
+  EXECUTION_DETAILS: `/execution_types/:${RouteParams.EXECUTION_TYPE}+/executions/:${RouteParams.ID}`,
   EXPERIMENTS: '/experiments',
   EXPERIMENT_DETAILS: `/experiments/details/:${RouteParams.experimentId}`,
   NEW_EXPERIMENT: '/experiments/new',
   NEW_RUN: '/runs/new',
   PIPELINES: '/pipelines',
-  PIPELINE_DETAILS: `/pipelines/details/:${RouteParams.pipelineId}`,
+  PIPELINE_DETAILS: `/pipelines/details/:${RouteParams.pipelineId}?`, // pipelineId is optional
   RECURRING_RUN: `/recurringrun/details/:${RouteParams.runId}`,
   RUNS: '/runs',
   RUN_DETAILS: `/runs/details/:${RouteParams.runId}`,
+};
+
+// tslint:disable-next-line:variable-name
+export const RoutePageFactory = {
+  artifactDetails: (artifactType: string, artifactId: number) => {
+    return RoutePage.ARTIFACT_DETAILS
+      .replace(`:${RouteParams.ARTIFACT_TYPE}+`, artifactType)
+      .replace(`:${RouteParams.ID}`, '' + artifactId);
+  }
 };
 
 export interface DialogProps {
@@ -98,10 +141,15 @@ class Router extends React.Component<{}, RouteComponentState> {
       updateBanner: this._updateBanner.bind(this),
       updateDialog: this._updateDialog.bind(this),
       updateSnackbar: this._updateSnackbar.bind(this),
-      updateToolbar: this._setToolbarActions.bind(this),
+      updateToolbar: this._updateToolbar.bind(this),
     };
 
     const routes: Array<{ path: string, Component: React.ComponentClass, view?: any }> = [
+      { path: RoutePage.ARCHIVE, Component: Archive },
+      { path: RoutePage.ARTIFACTS, Component: ArtifactList },
+      { path: RoutePage.ARTIFACT_DETAILS, Component: ArtifactDetails },
+      { path: RoutePage.EXECUTIONS, Component: ExecutionList },
+      { path: RoutePage.EXECUTION_DETAILS, Component: ExecutionDetails },
       { path: RoutePage.EXPERIMENTS, Component: ExperimentsAndRuns, view: ExperimentsAndRunsTab.EXPERIMENTS },
       { path: RoutePage.EXPERIMENT_DETAILS, Component: ExperimentDetails },
       { path: RoutePage.NEW_EXPERIMENT, Component: NewExperiment },
@@ -109,7 +157,7 @@ class Router extends React.Component<{}, RouteComponentState> {
       { path: RoutePage.PIPELINES, Component: PipelineList },
       { path: RoutePage.PIPELINE_DETAILS, Component: PipelineDetails },
       { path: RoutePage.RUNS, Component: ExperimentsAndRuns, view: ExperimentsAndRunsTab.RUNS },
-      { path: RoutePage.RECURRING_RUN, Component: RecurringRunConfig },
+      { path: RoutePage.RECURRING_RUN, Component: RecurringRunDetails },
       { path: RoutePage.RUN_DETAILS, Component: RunDetails },
       { path: RoutePage.COMPARE, Component: Compare },
     ];
@@ -137,6 +185,9 @@ class Router extends React.Component<{}, RouteComponentState> {
                     <Component {...props} {...childProps} {...otherProps} />
                   )} />;
                 })}
+
+                {/* 404 */}
+                {<Route render={({ ...props }) => <Page404 {...props} {...childProps} />} />}
               </Switch>
 
               <Snackbar
@@ -191,7 +242,8 @@ class Router extends React.Component<{}, RouteComponentState> {
     }
   }
 
-  private _setToolbarActions(toolbarProps: ToolbarProps): void {
+  private _updateToolbar(newToolbarProps: Partial<ToolbarProps>): void {
+    const toolbarProps = Object.assign(this.state.toolbarProps, newToolbarProps);
     this.setState({ toolbarProps });
   }
 

@@ -15,11 +15,10 @@
  */
 
 import * as React from 'react';
+import Buttons from '../lib/Buttons';
 import CollapseButton from '../components/CollapseButton';
-import CollapseIcon from '@material-ui/icons/UnfoldLess';
 import CompareTable, { CompareTableProps } from '../components/CompareTable';
 import CompareUtils from '../lib/CompareUtils';
-import ExpandIcon from '@material-ui/icons/UnfoldMore';
 import Hr from '../atoms/Hr';
 import PlotCard, { PlotCardProps } from '../components/PlotCard';
 import RunList from './RunList';
@@ -27,16 +26,16 @@ import Separator from '../atoms/Separator';
 import WorkflowParser from '../lib/WorkflowParser';
 import { ApiRunDetail } from '../apis/run';
 import { Apis } from '../lib/Apis';
+import { OutputArtifactLoader } from '../lib/OutputArtifactLoader';
 import { Page } from './Page';
-import { RoutePage } from '../components/Router';
+import { RoutePage, QUERY_PARAMS } from '../components/Router';
 import { ToolbarProps } from '../components/Toolbar';
-import { URLParser, QUERY_PARAMS } from '../lib/URLParser';
+import { URLParser } from '../lib/URLParser';
 import { ViewerConfig, PlotType } from '../components/viewers/Viewer';
 import { Workflow } from '../../third_party/argo-ui/argo_template';
 import { classes, stylesheet } from 'typestyle';
 import { commonCss, padding } from '../Css';
 import { componentMap } from '../components/viewers/ViewerContainer';
-import { loadOutputArtifacts } from '../lib/OutputArtifactLoader';
 import { logger } from '../lib/Utils';
 
 const css = stylesheet({
@@ -46,16 +45,17 @@ const css = stylesheet({
   },
 });
 
-interface TaggedViewerConfig {
+export interface TaggedViewerConfig {
   config: ViewerConfig;
   runId: string;
   runName: string;
 }
 
-interface CompareState {
+export interface CompareState {
   collapseSections: { [key: string]: boolean };
   fullscreenViewerConfig: PlotCardProps | null;
   paramsCompareProps: CompareTableProps;
+  metricsCompareProps: CompareTableProps;
   runs: ApiRunDetail[];
   selectedIds: string[];
   viewersMap: Map<PlotType, TaggedViewerConfig[]>;
@@ -64,6 +64,7 @@ interface CompareState {
 
 const overviewSectionName = 'Run overview';
 const paramsSectionName = 'Parameters';
+const metricsSectionName = 'Metrics';
 
 class Compare extends Page<{}, CompareState> {
 
@@ -73,6 +74,7 @@ class Compare extends Page<{}, CompareState> {
     this.state = {
       collapseSections: {},
       fullscreenViewerConfig: null,
+      metricsCompareProps: { rows: [], xLabels: [], yLabels: [] },
       paramsCompareProps: { rows: [], xLabels: [], yLabels: [] },
       runs: [],
       selectedIds: [],
@@ -82,24 +84,15 @@ class Compare extends Page<{}, CompareState> {
   }
 
   public getInitialToolbarState(): ToolbarProps {
+    const buttons = new Buttons(this.props, this.refresh.bind(this));
     return {
-      actions: [{
-        action: () => this.setState({ collapseSections: {} }),
-        icon: ExpandIcon,
-        id: 'expandBtn',
-        title: 'Expand all',
-        tooltip: 'Expand all sections',
-      }, {
-        action: this._collapseAllSections.bind(this),
-        icon: CollapseIcon,
-        id: 'collapseBtn',
-        title: 'Collapse all',
-        tooltip: 'Collapse all sections',
-      }],
-      breadcrumbs: [
-        { displayName: 'Experiments', href: RoutePage.EXPERIMENTS },
-        { displayName: 'Compare runs', href: '' },
-      ],
+      actions: buttons
+        .expandSections(() => this.setState({ collapseSections: {} }))
+        .collapseSections(this._collapseAllSections.bind(this))
+        .refresh(this.refresh.bind(this))
+        .getToolbarActionMap(),
+      breadcrumbs: [{ displayName: 'Experiments', href: RoutePage.EXPERIMENTS }],
+      pageTitle: 'Compare runs',
     };
   }
 
@@ -118,7 +111,8 @@ class Compare extends Page<{}, CompareState> {
     return (<div className={classes(commonCss.page, padding(20, 'lrt'))}>
 
       {/* Overview section */}
-      <CollapseButton compareComponent={this} sectionName={overviewSectionName} />
+      <CollapseButton sectionName={overviewSectionName} collapseSections={collapseSections}
+        compareSetState={this.setStateSafe.bind(this)} />
       {!collapseSections[overviewSectionName] && (
         <div className={commonCss.noShrink}>
           <RunList onError={this.showPageError.bind(this)} {...this.props}
@@ -130,7 +124,8 @@ class Compare extends Page<{}, CompareState> {
       <Separator orientation='vertical' />
 
       {/* Parameters section */}
-      <CollapseButton compareComponent={this} sectionName={paramsSectionName} />
+      <CollapseButton sectionName={paramsSectionName} collapseSections={collapseSections}
+        compareSetState={this.setStateSafe.bind(this)} />
       {!collapseSections[paramsSectionName] && (
         <div className={classes(commonCss.noShrink, css.outputsRow)}>
           <Separator orientation='vertical' />
@@ -139,37 +134,52 @@ class Compare extends Page<{}, CompareState> {
         </div>
       )}
 
+      {/* Metrics section */}
+      <CollapseButton sectionName={metricsSectionName} collapseSections={collapseSections}
+        compareSetState={this.setStateSafe.bind(this)} />
+      {!collapseSections[metricsSectionName] && (
+        <div className={classes(commonCss.noShrink, css.outputsRow)}>
+          <Separator orientation='vertical' />
+          <CompareTable {...this.state.metricsCompareProps} />
+          <Hr />
+        </div>
+      )}
+
       <Separator orientation='vertical' />
 
-      {Array.from(viewersMap.keys()).map((viewerType, i) => <div key={i}>
-        <CollapseButton compareComponent={this}
-          sectionName={componentMap[viewerType].prototype.getDisplayName()} />
-        {!collapseSections[componentMap[viewerType].prototype.getDisplayName()] &&
-          <React.Fragment>
-            <div className={classes(commonCss.flex, css.outputsRow)}>
-              {/* If the component allows aggregation, add one more card for
-              its aggregated view. Only do this if there is more than one
-              output, filtering out any unselected runs. */}
-              {(componentMap[viewerType].prototype.isAggregatable() && (
-                runsPerViewerType(viewerType).length > 1) && (
-                  <PlotCard configs={
-                    runsPerViewerType(viewerType).map(t => t.config)} maxDimension={400}
-                    title='Aggregated view' />
-                )
-              )}
+      {Array.from(viewersMap.keys()).map((viewerType, i) =>
+        !!runsPerViewerType(viewerType).length && (
+          <div key={i}>
+            <CollapseButton collapseSections={collapseSections}
+              compareSetState={this.setStateSafe.bind(this)}
+              sectionName={componentMap[viewerType].prototype.getDisplayName()} />
+            {!collapseSections[componentMap[viewerType].prototype.getDisplayName()] && (
+              <React.Fragment>
+                <div className={classes(commonCss.flex, css.outputsRow)}>
+                  {/* If the component allows aggregation, add one more card for
+                its aggregated view. Only do this if there is more than one
+                output, filtering out any unselected runs. */}
+                  {(componentMap[viewerType].prototype.isAggregatable() && (
+                    runsPerViewerType(viewerType).length > 1) && (
+                      <PlotCard configs={
+                        runsPerViewerType(viewerType).map(t => t.config)} maxDimension={400}
+                        title='Aggregated view' />
+                    )
+                  )}
 
-              {runsPerViewerType(viewerType).map((taggedConfig, c) => (
-                <PlotCard key={c} configs={[taggedConfig.config]} title={taggedConfig.runName}
-                  maxDimension={400} />
-              ))}
-              <Separator />
+                  {runsPerViewerType(viewerType).map((taggedConfig, c) => (
+                    <PlotCard key={c} configs={[taggedConfig.config]} title={taggedConfig.runName}
+                      maxDimension={400} />
+                  ))}
+                  <Separator />
 
-            </div>
-            <Hr />
-          </React.Fragment>
-        }
-        <Separator orientation='vertical' />
-      </div>
+                </div>
+                <Hr />
+              </React.Fragment>
+            )}
+            <Separator orientation='vertical' />
+          </div>
+        )
       )}
     </div>);
   }
@@ -191,6 +201,7 @@ class Compare extends Page<{}, CompareState> {
     const workflowObjects: Workflow[] = [];
     const failingRuns: string[] = [];
     let lastError: Error | null = null;
+
     await Promise.all(runIds.map(async id => {
       try {
         const run = await Apis.runServiceApi.getRun(id);
@@ -203,20 +214,20 @@ class Compare extends Page<{}, CompareState> {
     }));
 
     if (lastError) {
-      await this.showPageError(
-        `Error: failed loading ${failingRuns.length} runs.`,
-        lastError,
-      );
+      await this.showPageError(`Error: failed loading ${failingRuns.length} runs.`, lastError);
       logger.error(
         `Failed loading ${failingRuns.length} runs, last failed with the error: ${lastError}`);
       return;
     }
 
-    this.setState({
+    const selectedIds = runs.map(r => r.run!.id!);
+    this.setStateSafe({
       runs,
-      selectedIds: runs.map(r => r.run!.id!),
+      selectedIds,
       workflowObjects,
-    }, () => this._loadParameters());
+    });
+    this._loadParameters(selectedIds);
+    this._loadMetrics(selectedIds);
 
     const outputPathsList = workflowObjects.map(
       workflow => WorkflowParser.loadAllOutputPaths(workflow));
@@ -227,7 +238,7 @@ class Compare extends Page<{}, CompareState> {
 
     await Promise.all(outputPathsList.map(async (pathList, i) => {
       for (const path of pathList) {
-        const configs = await loadOutputArtifacts(path);
+        const configs = await OutputArtifactLoader.load(path);
         configs.map(config => {
           const currentList: TaggedViewerConfig[] = viewersMap.get(config.type) || [];
           currentList.push({
@@ -241,35 +252,49 @@ class Compare extends Page<{}, CompareState> {
     }));
 
     // For each output artifact type, list all artifact instances in all runs
-    this.setState({ viewersMap });
+    this.setStateSafe({ viewersMap });
+  }
+
+  protected _selectionChanged(selectedIds: string[]): void {
+    this.setState({ selectedIds });
+    this._loadParameters(selectedIds);
+    this._loadMetrics(selectedIds);
   }
 
   private _collapseAllSections(): void {
-    const collapseSections = { [overviewSectionName]: true, [paramsSectionName]: true };
+    const collapseSections = {
+      [overviewSectionName]: true,
+      [paramsSectionName]: true,
+      [metricsSectionName]: true,
+    };
     Array.from(this.state.viewersMap.keys()).map(t => {
       const sectionName = componentMap[t].prototype.getDisplayName();
       collapseSections[sectionName] = true;
     });
-    this.setState({
-      collapseSections,
-    });
+    this.setState({ collapseSections });
   }
 
-  private _selectionChanged(selectedIds: string[]): void {
-    this.setState({ selectedIds }, () => this._loadParameters());
-  }
-
-  private _loadParameters(): void {
-    const { runs, selectedIds, workflowObjects } = this.state;
+  private _loadParameters(selectedIds: string[]): void {
+    const { runs, workflowObjects } = this.state;
 
     const selectedIndices = selectedIds.map(id => runs.findIndex(r => r.run!.id === id));
     const filteredRuns = runs.filter((_, i) => selectedIndices.indexOf(i) > -1);
     const filteredWorkflows = workflowObjects.filter((_, i) => selectedIndices.indexOf(i) > -1);
 
-    const paramsCompareProps = CompareUtils.getParamsCompareProps(
-      filteredRuns, filteredWorkflows);
+    const paramsCompareProps = CompareUtils.getParamsCompareProps(filteredRuns, filteredWorkflows);
 
     this.setState({ paramsCompareProps });
+  }
+
+  private _loadMetrics(selectedIds: string[]): void {
+    const { runs } = this.state;
+
+    const selectedIndices = selectedIds.map(id => runs.findIndex(r => r.run!.id === id));
+    const filteredRuns = runs.filter((_, i) => selectedIndices.indexOf(i) > -1).map(r => r.run!);
+
+    const metricsCompareProps = CompareUtils.multiRunMetricsCompareProps(filteredRuns);
+
+    this.setState({ metricsCompareProps });
   }
 }
 

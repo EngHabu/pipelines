@@ -19,9 +19,9 @@ import (
 	"os"
 	"time"
 
-	"flag"
-
 	"testing"
+
+	"net/http"
 
 	"github.com/cenkalti/backoff"
 	experimentparams "github.com/kubeflow/pipelines/backend/api/go_http_client/experiment_client/experiment_service"
@@ -31,63 +31,33 @@ import (
 	"github.com/kubeflow/pipelines/backend/src/common/client/api_server"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
-const (
-	// ML pipeline API server root URL
-	mlPipelineAPIServerBase = "/api/v1/namespaces/%s/services/ml-pipeline:8888/proxy/apis/v1beta1/%s"
-)
-
-var namespace = flag.String("namespace", "kubeflow", "The namespace ml pipeline deployed to")
-var initializeTimeout = flag.Duration("initializeTimeout", 2*time.Minute, "Duration to wait for test initialization")
-
-func getKubernetesClient() (*kubernetes.Clientset, error) {
-	// use the current context in kubeconfig
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to get cluster config during K8s client initialization")
-	}
-	// create the clientset
-	clientSet, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to create client set during K8s client initialization")
-	}
-
-	return clientSet, nil
-}
-
-func waitForReady(namespace string, initializeTimeout time.Duration) error {
-	clientSet, err := getKubernetesClient()
-	if err != nil {
-		return errors.Wrapf(err, "Failed to get K8s client set when waiting for ML pipeline to be ready")
-	}
-
+func WaitForReady(namespace string, initializeTimeout time.Duration) error {
 	var operation = func() error {
-		response := clientSet.RESTClient().Get().
-			AbsPath(fmt.Sprintf(mlPipelineAPIServerBase, namespace, "healthz")).Do()
-		if response.Error() == nil {
-			return nil
+		response, err := http.Get(fmt.Sprintf("http://ml-pipeline.%s.svc.cluster.local:8888/apis/v1beta1/healthz", namespace))
+		if err != nil {
+			return err
 		}
-		var code int
-		response.StatusCode(&code)
-		// we wait only on 503 service unavailable. Stop retry otherwise.
-		if code != 503 {
-			return backoff.Permanent(errors.Wrapf(response.Error(), "Waiting for ml pipeline failed with non retriable error."))
+
+		// If we get a 503 service unavailable, it's a non-retriable error.
+		if response.StatusCode == 503 {
+			return backoff.Permanent(errors.Wrapf(
+				err, "Waiting for ml pipeline API server failed with non retriable error."))
 		}
-		return response.Error()
+
+		return nil
 	}
 
 	b := backoff.NewExponentialBackOff()
 	b.MaxElapsedTime = initializeTimeout
-	err = backoff.Retry(operation, b)
-	return errors.Wrapf(err, "Waiting for ml pipeline failed after all attempts.")
+	err := backoff.Retry(operation, b)
+	return errors.Wrapf(err, "Waiting for ml pipeline API server failed after all attempts.")
 }
 
-func getClientConfig(namespace string) clientcmd.ClientConfig {
+func GetClientConfig(namespace string) clientcmd.ClientConfig {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	loadingRules.DefaultClientConfig = &clientcmd.DefaultClientConfig
 	overrides := clientcmd.ConfigOverrides{Context: clientcmdapi.Context{Namespace: namespace}}
@@ -95,32 +65,32 @@ func getClientConfig(namespace string) clientcmd.ClientConfig {
 		&overrides, os.Stdin)
 }
 
-func deleteAllPipelines(client *api_server.PipelineClient, t *testing.T) {
-	pipelines, _, err := client.List(&pipelineparams.ListPipelinesParams{})
+func DeleteAllPipelines(client *api_server.PipelineClient, t *testing.T) {
+	pipelines, _, _, err := client.List(&pipelineparams.ListPipelinesParams{})
 	assert.Nil(t, err)
 	for _, p := range pipelines {
 		assert.Nil(t, client.Delete(&pipelineparams.DeletePipelineParams{ID: p.ID}))
 	}
 }
 
-func deleteAllExperiments(client *api_server.ExperimentClient, t *testing.T) {
-	experiments, _, err := client.List(&experimentparams.ListExperimentParams{})
+func DeleteAllExperiments(client *api_server.ExperimentClient, t *testing.T) {
+	experiments, _, _, err := client.List(&experimentparams.ListExperimentParams{})
 	assert.Nil(t, err)
 	for _, e := range experiments {
 		assert.Nil(t, client.Delete(&experimentparams.DeleteExperimentParams{ID: e.ID}))
 	}
 }
 
-func deleteAllRuns(client *api_server.RunClient, t *testing.T) {
-	runs, _, err := client.List(&runparams.ListRunsParams{})
+func DeleteAllRuns(client *api_server.RunClient, t *testing.T) {
+	runs, _, _, err := client.List(&runparams.ListRunsParams{})
 	assert.Nil(t, err)
 	for _, r := range runs {
 		assert.Nil(t, client.Delete(&runparams.DeleteRunParams{ID: r.ID}))
 	}
 }
 
-func deleteAllJobs(client *api_server.JobClient, t *testing.T) {
-	jobs, _, err := client.List(&jobparams.ListJobsParams{})
+func DeleteAllJobs(client *api_server.JobClient, t *testing.T) {
+	jobs, _, _, err := client.List(&jobparams.ListJobsParams{})
 	assert.Nil(t, err)
 	for _, j := range jobs {
 		assert.Nil(t, client.Delete(&jobparams.DeleteJobParams{ID: j.ID}))

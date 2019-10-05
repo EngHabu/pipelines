@@ -12,14 +12,14 @@ bower_components/
 
 # Build output
 dist
-ml-pipeline/ml-pipeline-app
-ml-pipeline/kf-app
 
 # Web server
 frontend/server/*.js
 
 # Python built package
 *.egg-info
+dist
+.tox
 
 # UI test outputs
 frontend/test/ui/visual-regression/errorShots
@@ -31,7 +31,8 @@ frontend/test/ui/visual-regression/screenshots/screen
 
 # IDE
 .idea/
-ml.iml
+.ijwb/
+*.iml
 
 # Merge files
 *.orig
@@ -41,3 +42,22 @@ ml.iml
 
 .ipynb_checkpoints
 *.egg-info
+
+# go vendor
+vendor
+
+# Bazel output artifacts
+bazel-*
+
+# VSCode
+.vscode
+
+# test yaml
+sdk/python/tests/compiler/pipeline.yaml
+sdk/python/tests/compiler/testdata/testpackage/pipeline.yaml
+
+# Test temporary files
+_artifacts
+
+# Generated Python SDK documentation
+docs/_build

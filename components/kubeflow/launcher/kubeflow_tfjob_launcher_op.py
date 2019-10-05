@@ -17,7 +17,7 @@ from kfp import dsl
 def kubeflow_tfjob_launcher_op(container_image, command, number_of_workers: int, number_of_parameter_servers: int, tfjob_timeout_minutes: int, output_dir=None, step_name='TFJob-launcher'):
     return dsl.ContainerOp(
         name = step_name,
-        image = 'gcr.io/ml-pipeline/ml-pipeline-kubeflow-tf:0.1.0',#TODO-release: update the release tag for the next release
+        image = 'gcr.io/ml-pipeline/ml-pipeline-kubeflow-tf:57d9f7f1cfd458e945d297957621716062d89a49',
         arguments = [
             '--workers', number_of_workers,
             '--pss', number_of_parameter_servers,
@@ -27,5 +27,8 @@ def kubeflow_tfjob_launcher_op(container_image, command, number_of_workers: int,
             '--ui-metadata-type', 'tensorboard',
             '--',
         ] + command,
-        file_outputs = {'train': '/output.txt'}
+        file_outputs = {'train': '/output.txt'},
+        output_artifact_paths={
+            'mlpipeline-ui-metadata': '/mlpipeline-ui-metadata.json',
+        },
     )

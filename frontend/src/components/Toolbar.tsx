@@ -24,6 +24,9 @@ import { History } from 'history';
 import { Link } from 'react-router-dom';
 import { classes, stylesheet } from 'typestyle';
 import { spacing, fonts, fontsize, color, dimension, commonCss } from '../Css';
+import { CSSProperties } from 'react';
+
+export interface ToolbarActionMap { [key: string]: ToolbarActionConfig; }
 
 export interface ToolbarActionConfig {
   action: () => void;
@@ -33,6 +36,8 @@ export interface ToolbarActionConfig {
   icon?: any;
   id?: string;
   outlined?: boolean;
+  primary?: boolean;
+  style?: CSSProperties;
   title: string;
   tooltip: string;
 }
@@ -50,7 +55,6 @@ const css = stylesheet({
     marginRight: spacing.units(-2),
   },
   backIcon: {
-    color: color.foreground,
     fontSize: backIconHeight,
     verticalAlign: 'bottom',
   },
@@ -69,10 +73,16 @@ const css = stylesheet({
   chevron: {
     height: 12,
   },
+  disabled: {
+    color: '#aaa',
+  },
+  enabled: {
+    color: color.foreground,
+  },
   link: {
     $nest: {
       '&:hover': {
-        background: color.hoverBg,
+        background: color.lightGrey,
       }
     },
     borderRadius: 3,
@@ -91,25 +101,29 @@ const css = stylesheet({
     justifyContent: 'space-between',
   },
   topLevelToolbar: {
-    borderBottom: '1px solid #eee',
+    borderBottom: `1px solid ${color.lightGrey}`,
     paddingBottom: 15,
     paddingLeft: 20,
   },
 });
 
 export interface ToolbarProps {
-  actions: ToolbarActionConfig[];
+  actions: ToolbarActionMap;
   breadcrumbs: Breadcrumb[];
   history?: History;
+  pageTitle: string | JSX.Element;
+  pageTitleTooltip?: string;
   topLevelToolbar?: boolean;
 }
 
 class Toolbar extends React.Component<ToolbarProps> {
 
-  public render(): JSX.Element {
-    const currentPage = this.props.breadcrumbs.length ?
-      this.props.breadcrumbs[this.props.breadcrumbs.length - 1].displayName : '';
-    const breadcrumbs = this.props.breadcrumbs.slice(0, this.props.breadcrumbs.length - 1);
+  public render(): JSX.Element | null {
+    const { actions, breadcrumbs, pageTitle, pageTitleTooltip } = { ...this.props };
+
+    if (!actions.length && !breadcrumbs.length && !pageTitle) {
+      return null;
+    }
 
     return (
       <div className={
@@ -131,30 +145,37 @@ class Toolbar extends React.Component<ToolbarProps> {
             {/* Back Arrow */}
             {breadcrumbs.length > 0 &&
               <Tooltip title={'Back'} enterDelay={300}>
-                <IconButton className={css.backLink}
-                  // Need to handle this for when browsing back doesn't make sense
-                  onClick={this.props.history!.goBack}>
-                  <ArrowBackIcon className={css.backIcon} />
-                </IconButton>
+                <div> {/* Div needed because we sometimes disable a button within a tooltip */}
+                  <IconButton className={css.backLink}
+                    disabled={this.props.history!.length < 2}
+                    onClick={this.props.history!.goBack}>
+                    <ArrowBackIcon className={
+                      classes(css.backIcon, this.props.history!.length < 2 ? css.disabled : css.enabled)} />
+                  </IconButton>
+                </div>
               </Tooltip>}
             {/* Resource Name */}
-            <span className={classes(css.pageName, commonCss.ellipsis)} title={currentPage}>
-              {currentPage}
+            <span className={classes(css.pageName, commonCss.ellipsis)} title={pageTitleTooltip}>
+              {pageTitle}
             </span>
           </div>
         </div>
         {/* Actions / Buttons */}
         <div className={css.actions}>
-          {this.props.actions.map((b, i) => (
-            <Tooltip title={(b.disabled && b.disabledTitle) ? b.disabledTitle : b.tooltip}
-              enterDelay={300} key={i}>
-              <div>{/* Extra level needed by tooltip when child is disabled */}
-                <BusyButton id={b.id} color='secondary' onClick={b.action} disabled={b.disabled}
-                  title={b.title} icon={b.icon} busy={b.busy || false}
-                  outlined={b.outlined || false} />
-              </div>
-            </Tooltip>
-          ))}
+          {Object.keys(actions).map((buttonKey, i) => {
+            const button = actions[buttonKey];
+            return (
+              <Tooltip title={(button.disabled && button.disabledTitle) ? button.disabledTitle : button.tooltip}
+                enterDelay={300} key={i}>
+                <div style={button.style}>{/* Extra level needed by tooltip when child is disabled */}
+                  <BusyButton id={button.id} color='secondary' onClick={button.action} disabled={button.disabled}
+                    title={button.title} icon={button.icon} busy={button.busy || false}
+                    outlined={(button.outlined && !button.primary) || false}
+                    className={button.primary ? commonCss.buttonAction : ''} />
+                </div>
+              </Tooltip>
+            );
+          })}
         </div>
       </div>
     );
