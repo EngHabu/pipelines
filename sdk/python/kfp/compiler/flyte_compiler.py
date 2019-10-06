@@ -17,6 +17,7 @@ from flytekit.common.core import identifier as _identifier
 
 from kfp import dsl
 from kfp.compiler import Compiler
+from ..dsl._container_op import BaseOp
 
 import json
 from collections import defaultdict
@@ -29,7 +30,7 @@ from kfp.dsl import _for_loop
 
 from .. import dsl
 from ._k8s_helper import K8sHelper
-from ._op_to_template import _op_to_template
+from ._op_to_template import _op_to_template, _process_base_ops
 from ._default_transformers import add_pod_env
 
 from ..components._structures import InputSpec
@@ -52,22 +53,44 @@ class FlyteCompiler(Compiler):
     ```
     """
 
-    def _op_to_task(self, op, node_map):
+    def _pipelineparam_full_name(self, param):
+        """_pipelineparam_full_name converts the names of pipeline parameters
+        to unique names in the argo yaml
+
+        Args:
+        param(PipelineParam): pipeline parameter
+        """
+        if param.op_name:
+            return param.op_name + '-' + param.name
+        return param.name
+
+
+    def _op_to_task(self, op: BaseOp, node_map):
         """Generate task given an operator inherited from dsl.ContainerOp."""
+
+        # processed_op = _process_base_ops(op)
+        processed_op = op
 
         interface_inputs = {}
         interface_outputs = {}
         input_mappings = {}
+
+        # Command line args
         processed_args = None
-        if op.arguments:
-            processed_args = list(map(str, op.arguments))
-            for i, _ in enumerate(processed_args):
-                if op.argument_inputs:
-                    for param in op.argument_inputs:
-                        full_name = self._param_full_name(param)
-                        processed_args[i] = re.sub(str(param), '{{.inputs.%s}}' % full_name,
-                                                   processed_args[i])
-        for param in op.inputs:
+        if processed_op.container.args:
+            processed_args = list(map(str, processed_op.container.args))
+            for i, param in enumerate(processed_args):
+                param_tuples = dsl.match_serialized_pipelineparam(param)
+                if not param_tuples:
+                    processed_args[i] = param
+                    continue
+                # replace all unsanitized signature with template var
+                for param_tuple in param_tuples:
+                    param = re.sub(param_tuple.pattern, '{{.inputs.%s}}' % param_tuple.name, param)
+                processed_args[i] = param
+
+        # Input interface
+        for param in processed_op.inputs:
             interface_inputs[param.name] = interface_model.Variable(
                 _type_helpers.python_std_to_sdk_type(Types.String).to_flyte_literal_type(),
                 ''
@@ -82,44 +105,49 @@ class FlyteCompiler(Compiler):
                     var=param.name)
             input_mappings[param.name] = binding
 
-        for param in op.outputs.values():
+        # Output interface
+        for param in processed_op.outputs.values():
             interface_outputs[param.name] = interface_model.Variable(
                 _type_helpers.python_std_to_sdk_type(Types.String).to_flyte_literal_type(),
                 ''
             )
 
         requests = []
-        if op.container.resources and op.container.resources.cpu_request:
+        if processed_op.container.resources and processed_op.container.resources.cpu_request:
             requests.append(
                 task_model.Resources.ResourceEntry(
                     task_model.Resources.ResourceName.CPU,
-                    op.container.resources.cpu_request
+                    processed_op.container.resources.cpu_request
                 )
             )
 
-        if op.container.resources and op.container.resources.memory_request:
+        if processed_op.container.resources and processed_op.container.resources.memory_request:
             requests.append(
                 task_model.Resources.ResourceEntry(
                     task_model.Resources.ResourceName.MEMORY,
-                    op.container.resources.memory_request
+                    processed_op.container.resources.memory_request
                 )
             )
 
         limits = []
-        if op.container.resources and op.container.resources.cpu_limit:
+        if processed_op.container.resources and processed_op.container.resources.cpu_limit:
             limits.append(
                 task_model.Resources.ResourceEntry(
                     task_model.Resources.ResourceName.CPU,
-                    op.container.resources.cpu_limit
+                    processed_op.container.resources.cpu_limit
                 )
             )
-        if op.container.resources and op.container.resources.memory_limit:
+        if processed_op.container.resources and processed_op.container.resources.memory_limit:
             limits.append(
                 task_model.Resources.ResourceEntry(
                     task_model.Resources.ResourceName.MEMORY,
-                    op.container.resources.memory_limit
+                    processed_op.container.resources.memory_limit
                 )
             )
+
+        retries = 0
+        if processed_op.num_retries:
+            retries = processed_op.num_retries
 
         task = base_tasks.SdkTask(
             "container_op",
@@ -131,15 +159,15 @@ class FlyteCompiler(Compiler):
                     flavor='kf'
                 ),
                 timeout=datetime.timedelta(seconds=0),
-                retries=literals_model.RetryStrategy(0),
+                retries=literals_model.RetryStrategy(retries),
                 discovery_version='1',
                 deprecated_error_message=None,
             ),
             interface=interface_common.TypedInterface(inputs=interface_inputs, outputs=interface_outputs),
             custom=None,
             container=task_model.Container(
-                image=op.image,
-                command=op.command,
+                image=processed_op.image,
+                command=processed_op.command,
                 args=processed_args,
                 resources=task_model.Resources(limits=limits, requests=requests),
                 env={},
@@ -150,13 +178,13 @@ class FlyteCompiler(Compiler):
         # HACK to fix the project and domain. Ideally this should be a parameter
         task._id = _identifier.Identifier(
             task.id.resource_type,
-            "flyteexamples",
+            "flytetester",
             "development",
-            op.name,
+            processed_op.name,
             "1",
         )
 
-        return task, task(**input_mappings).assign_id_and_return(op.name)
+        return task, task(**input_mappings).assign_id_and_return(processed_op.name)
 
     def _create_tasks(self, pipeline):
         tasks = set()
@@ -287,5 +315,6 @@ class FlyteCompiler(Compiler):
     def register(self, pipeline_func, version: str):
         w = self._compile(pipeline_func)
         for t in w.tasks:
-            print(t.register("flyteexamples", "development", t._id.name, version))
-        print(w.workflow.register("flyteexamples", "development", "test_workflow", "v1"))
+                print(t.register("flytetester", "development", t._id.name, version))
+        print(w.workflow.register("flytetester", "development", "test_workflow", version))
+        print(w.workflow.create_launch_plan().register("flytetester", "development", "test_workflow", version))

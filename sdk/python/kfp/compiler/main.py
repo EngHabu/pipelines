@@ -74,7 +74,7 @@ def _compile_pipeline_function(pipeline_funcs, function_name, output_path, targe
     pipeline_func = pipeline_funcs[0]
 
   if target_platform == 'flyte':
-    kfp.compiler.FlyteCompiler().register(pipeline_func, "v1")
+    kfp.compiler.FlyteCompiler().register(pipeline_func, "v8")
   else:
     kfp.compiler.Compiler().compile(pipeline_func, output_path, type_check)
 
