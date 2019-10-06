@@ -14,14 +14,15 @@
 
 
 import argparse
-import kfp.dsl as dsl
-import kfp.compiler
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from deprecated.sphinx import deprecated
+
+import kfp.compiler
+import kfp.dsl as dsl
 
 
 def parse_arguments():
@@ -47,12 +48,16 @@ def parse_arguments():
   parser.add_argument('--disable-type-check',
                       action='store_true',
                       help='disable the type check, default is enabled.')
+  parser.add_argument('--platform',
+                      type=str,
+                      required=False,
+                      help='Determines platform to target [flyte/argo]. Defaults to argo.')
 
   args = parser.parse_args()
   return args
 
 
-def _compile_pipeline_function(pipeline_funcs, function_name, output_path, type_check):
+def _compile_pipeline_function(pipeline_funcs, function_name, output_path, target_platform, type_check):
   if len(pipeline_funcs) == 0:
     raise ValueError('A function with @dsl.pipeline decorator is required in the py file.')
 
@@ -68,7 +73,10 @@ def _compile_pipeline_function(pipeline_funcs, function_name, output_path, type_
   else:
     pipeline_func = pipeline_funcs[0]
 
-  kfp.compiler.Compiler().compile(pipeline_func, output_path, type_check)
+  if target_platform == 'flyte':
+    kfp.compiler.FlyteCompiler().register(pipeline_func, "v8")
+  else:
+    kfp.compiler.Compiler().compile(pipeline_func, output_path, type_check)
 
 
 class PipelineCollectorContext():
@@ -90,26 +98,26 @@ class PipelineCollectorContext():
     Please switch to compiling pipeline files or functions.
     If you use this feature please create an issue in https://github.com/kubeflow/pipelines/issues .'''
 )
-def compile_package(package_path, namespace, function_name, output_path, type_check):
+def compile_package(package_path, namespace, function_name, output_path, target_platform, type_check):
   tmpdir = tempfile.mkdtemp()
   sys.path.insert(0, tmpdir)
   try:
     subprocess.check_call(['python3', '-m', 'pip', 'install', package_path, '-t', tmpdir])
     with PipelineCollectorContext() as pipeline_funcs:
       __import__(namespace)
-    _compile_pipeline_function(pipeline_funcs, function_name, output_path, type_check)
+    _compile_pipeline_function(pipeline_funcs, function_name, output_path, target_platform, type_check)
   finally:
     del sys.path[0]
     shutil.rmtree(tmpdir)
 
 
-def compile_pyfile(pyfile, function_name, output_path, type_check):
+def compile_pyfile(pyfile, function_name, output_path, target_platform, type_check):
   sys.path.insert(0, os.path.dirname(pyfile))
   try:
     filename = os.path.basename(pyfile)
     with PipelineCollectorContext() as pipeline_funcs:
       __import__(os.path.splitext(filename)[0])
-    _compile_pipeline_function(pipeline_funcs, function_name, output_path, type_check)
+    _compile_pipeline_function(pipeline_funcs, function_name, output_path, target_platform, type_check)
   finally:
     del sys.path[0]
 
@@ -120,9 +128,12 @@ def main():
       (args.py is not None and args.package is not None)):
     raise ValueError('Either --py or --package is needed but not both.')
   if args.py:
-    compile_pyfile(args.py, args.function, args.output, not args.disable_type_check)
+    compile_pyfile(args.py, args.function, args.output, args.platform, not args.disable_type_check)
   else:
     if args.namespace is None:
       raise ValueError('--namespace is required for compiling packages.')
-    compile_package(args.package, args.namespace, args.function, args.output, not args.disable_type_check)
+    compile_package(args.package, args.namespace, args.function, args.output, args.platform, not args.disable_type_check)
   
+
+if __name__ == "__main__":
+  main()

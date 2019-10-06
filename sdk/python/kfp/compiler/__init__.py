@@ -15,3 +15,4 @@
 
 from .compiler import Compiler
 from ..containers._component_builder import build_python_component, build_docker_image, VersionedDependency
+from .flyte_compiler import FlyteCompiler
