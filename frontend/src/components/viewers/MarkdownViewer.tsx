@@ -17,8 +17,7 @@
 import * as React from 'react';
 import Viewer, { ViewerConfig } from './Viewer';
 import { cssRaw } from 'typestyle';
-// tslint:disable-next-line:no-var-requires
-const markdownIt = require('markdown-it');
+import Markdown from 'markdown-to-jsx';
 
 cssRaw(`
 .markdown-viewer h1,
@@ -66,10 +65,6 @@ interface MarkdownViewerProps {
 class MarkdownViewer extends Viewer<MarkdownViewerProps, any> {
   private _config = this.props.configs[0];
 
-  constructor(props: any) {
-    super(props);
-  }
-
   public getDisplayName(): string {
     return 'Markdown';
   }
@@ -78,8 +73,11 @@ class MarkdownViewer extends Viewer<MarkdownViewerProps, any> {
     if (!this._config) {
       return null;
     }
-    const html = markdownIt().render(this._config.markdownContent);
-    return <div className='markdown-viewer' dangerouslySetInnerHTML={{ __html: html }} />;
+    return (
+      <div className='markdown-viewer'>
+        <Markdown>{this._config.markdownContent}</Markdown>
+      </div>
+    );
   }
 }
 

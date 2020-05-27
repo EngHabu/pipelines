@@ -17,6 +17,7 @@
   "paths": {
     "/apis/v1beta1/jobs": {
       "get": {
+        "summary": "Find all jobs.",
         "operationId": "ListJobs",
         "responses": {
           "200": {
@@ -48,7 +49,7 @@
           },
           {
             "name": "sort_by",
-            "description": "Can be format of \"field_name\", \"field_name asc\" or \"field_name des\"\nAscending by default.",
+            "description": "Can be format of \"field_name\", \"field_name asc\" or \"field_name des\".\nAscending by default.",
             "in": "query",
             "required": false,
             "type": "string"
@@ -62,7 +63,10 @@
             "enum": [
               "UNKNOWN_RESOURCE_TYPE",
               "EXPERIMENT",
-              "JOB"
+              "JOB",
+              "PIPELINE",
+              "PIPELINE_VERSION",
+              "NAMESPACE"
             ],
             "default": "UNKNOWN_RESOURCE_TYPE"
           },
@@ -75,7 +79,7 @@
           },
           {
             "name": "filter",
-            "description": "A base-64 encoded, JSON-serialized Filter protocol buffer (see\nfilter.proto).",
+            "description": "A url-encoded, JSON-serialized Filter protocol buffer (see\n[filter.proto](https://github.com/kubeflow/pipelines/\nblob/master/backend/api/filter.proto)).",
             "in": "query",
             "required": false,
             "type": "string"
@@ -86,6 +90,7 @@
         ]
       },
       "post": {
+        "summary": "Create a new job.",
         "operationId": "CreateJob",
         "responses": {
           "200": {
@@ -119,6 +124,7 @@
     },
     "/apis/v1beta1/jobs/{id}": {
       "get": {
+        "summary": "Find a specific job by ID.",
         "operationId": "GetJob",
         "responses": {
           "200": {
@@ -148,6 +154,7 @@
         ]
       },
       "delete": {
+        "summary": "Delete a job.",
         "operationId": "DeleteJob",
         "responses": {
           "200": {
@@ -179,6 +186,7 @@
     },
     "/apis/v1beta1/jobs/{id}/disable": {
       "post": {
+        "summary": "Stops a job and all its associated runs. The job is not deleted.",
         "operationId": "DisableJob",
         "responses": {
           "200": {
@@ -210,6 +218,7 @@
     },
     "/apis/v1beta1/jobs/{id}/enable": {
       "post": {
+        "summary": "Restarts a job that was previously stopped. All runs associated with the job will continue.",
         "operationId": "EnableJob",
         "responses": {
           "200": {
@@ -266,7 +275,7 @@
         },
         "cron": {
           "type": "string",
-          "title": "The cron string. For details how to compose a cron, visit ttps://en.wikipedia.org/wiki/Cron"
+          "title": "The cron string. For details how to compose a cron, visit\nttps://en.wikipedia.org/wiki/Cron"
         }
       },
       "title": "CronSchedule allow scheduling the job with unix-like cron"
@@ -295,7 +304,11 @@
           "items": {
             "$ref": "#/definitions/apiResourceReference"
           },
-          "description": "Optional input field. Specify which resource this run belongs to."
+          "description": "Optional input field. Specify which resource this job belongs to."
+        },
+        "service_account": {
+          "type": "string",
+          "description": "Optional input field. Specify which Kubernetes service account this job uses."
         },
         "max_concurrency": {
           "type": "string",
@@ -331,6 +344,11 @@
           "type": "boolean",
           "format": "boolean",
           "description": "Input. Whether the job is enabled or not."
+        },
+        "no_catchup": {
+          "type": "boolean",
+          "format": "boolean",
+          "description": "Optional input field. Whether the job should catch up if behind schedule.\nIf true, the job will only schedule the latest interval if behind schedule.\nIf false, the job will catch up on each past interval."
         }
       }
     },
@@ -456,7 +474,10 @@
       "enum": [
         "UNKNOWN_RESOURCE_TYPE",
         "EXPERIMENT",
-        "JOB"
+        "JOB",
+        "PIPELINE",
+        "PIPELINE_VERSION",
+        "NAMESPACE"
       ],
       "default": "UNKNOWN_RESOURCE_TYPE"
     },

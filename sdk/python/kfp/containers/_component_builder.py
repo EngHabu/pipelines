@@ -140,9 +140,9 @@ def _generate_dockerfile(filename, base_image, python_version, requirement_filen
     if requirement_filename is not None:
       f.write('ADD ' + requirement_filename + ' /ml/requirements.txt\n')
       if python_version == 'python3':
-        f.write('RUN pip3 install -r /ml/requirements.txt\n')
+        f.write('RUN python3 -m pip install -r /ml/requirements.txt\n')
       else:
-        f.write('RUN pip install -r /ml/requirements.txt\n')
+        f.write('RUN python -m pip install -r /ml/requirements.txt\n')
     
     for src_path, dst_path in (add_files or {}).items():     
       f.write('ADD ' + src_path + ' ' + dst_path + '\n')
@@ -168,6 +168,7 @@ def _configure_logger(logger):
   logger.addHandler(error_handler)
 
 
+@deprecated(version='0.1.32', reason='`build_python_component` is deprecated. Use `kfp.containers.build_image_from_working_dir` + `kfp.components.func_to_container_op` instead.')
 def build_python_component(component_func, target_image, base_image=None, dependency=[], staging_gcs_path=None, timeout=600, namespace=None, target_component_file=None, python_version='python3'):
   """ build_component automatically builds a container image for the component_func
   based on the base_image and pushes to the target_image.
@@ -203,8 +204,8 @@ def build_python_component(component_func, target_image, base_image=None, depend
   if base_image is None:
     base_image = getattr(component_func, '_component_base_image', None)
   if base_image is None:
-    from ..components._python_op import get_default_base_image
-    base_image = get_default_base_image()
+    from ..components._python_op import default_base_image_or_builder
+    base_image = default_base_image_or_builder
     if isinstance(base_image, Callable):
       base_image = base_image()
 

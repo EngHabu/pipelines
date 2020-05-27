@@ -26,10 +26,20 @@ spec:
       parameters:
       - name: create-pvc-name
     name: cop
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+    volumes:
+    - name: create-pvc
+      persistentVolumeClaim:
+        claimName: '{{inputs.parameters.create-pvc-name}}'
   - inputs:
       parameters:
       - name: size
     name: create-pvc
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
     outputs:
       parameters:
       - name: create-pvc-manifest
@@ -66,7 +76,3 @@ spec:
       parameters:
       - name: size
     name: volumeop-basic
-  volumes:
-  - name: create-pvc
-    persistentVolumeClaim:
-      claimName: '{{inputs.parameters.create-pvc-name}}'

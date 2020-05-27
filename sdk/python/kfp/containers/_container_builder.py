@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+__all__ = [
+    'ContainerBuilder',
+]
+
 import logging
 import tarfile
 import tempfile
@@ -21,7 +25,6 @@ import uuid
 SERVICEACCOUNT_NAMESPACE = '/var/run/secrets/kubernetes.io/serviceaccount/namespace'
 GCS_STAGING_BLOB_DEFAULT_PREFIX = 'kfp_container_build_staging'
 GCR_DEFAULT_IMAGE_SUFFIX = 'kfp_container'
-
 
 def _get_project_id():
   import requests
@@ -51,28 +54,37 @@ class ContainerBuilder(object):
   """
   ContainerBuilder helps build a container image
   """
-  def __init__(self, gcs_staging=None, gcr_image_tag=None, namespace=None):
+  def __init__(self, gcs_staging=None, default_image_name=None, namespace=None,
+               service_account='kubeflow-pipelines-container-builder'):
     """
     Args:
       gcs_staging (str): GCS bucket/blob that can store temporary build files,
-          default is gs://PROJECT_ID/kfp_container_build_staging.
-      gcr_image_tag (str): GCR image tag where the target image is pushed
-      namespace (str): kubernetes namespace where the pod is launched,
+          default is gs://PROJECT_ID/kfp_container_build_staging. You have to
+          specify this when it doesn't run in cluster.
+      default_image_name (str): Target container image name that will be used by the build method if the target_image argument is not specified.
+      namespace (str): Kubernetes namespace where the container builder pod is launched,
           default is the same namespace as the notebook service account in cluster
-              or 'kubeflow' if not in cluster
+          or 'kubeflow' if not in cluster. If using the full Kubeflow
+          deployment and not in cluster, you should specify your own user namespace.
+      service_account (str): Kubernetes service account the pod uses for container building,
+          The default value is "kubeflow-pipelines-container-builder". It works with Kubeflow Pipelines clusters installed using Google Cloud Marketplace or Standalone with version > 0.4.0.
+          The service account should have permission to read and write from staging gcs path and upload built images to gcr.io.
     """
     self._gcs_staging = gcs_staging
     self._gcs_staging_checked = False
-    self._default_image_name = gcr_image_tag
-
-    # Configure the namespace
+    self._default_image_name = default_image_name
     self._namespace = namespace
-    if namespace is None:
+    self._service_account = service_account
+
+  def _get_namespace(self):
+    if self._namespace is None:
+      # Configure the namespace
       if os.path.exists(SERVICEACCOUNT_NAMESPACE):
         with open(SERVICEACCOUNT_NAMESPACE, 'r') as f:
           self._namespace = f.read()
       else:
         self._namespace = 'kubeflow'
+    return self._namespace
 
   def _get_staging_location(self):
     if self._gcs_staging_checked:
@@ -114,7 +126,7 @@ class ContainerBuilder(object):
         'apiVersion': 'v1',
         'metadata': {
             'generateName': 'kaniko-',
-            'namespace': self._namespace,
+            'namespace': self._get_namespace(),
             'annotations': {
                 'sidecar.istio.io/inject': 'false'
             },
@@ -131,22 +143,8 @@ class ContainerBuilder(object):
                          '--digest-file=/dev/termination-log', # This is suggested by the Kaniko devs as a way to return the image digest from Kaniko Pod. See https://github.com/GoogleContainerTools/kaniko#--digest-file
                 ],
                 'image': 'gcr.io/kaniko-project/executor@sha256:78d44ec4e9cb5545d7f85c1924695c89503ded86a59f92c7ae658afa3cff5400',
-                'env': [{
-                    'name': 'GOOGLE_APPLICATION_CREDENTIALS',
-                    'value': '/secret/gcp-credentials/user-gcp-sa.json'
-                }],
-                'volumeMounts': [{
-                    'mountPath': '/secret/gcp-credentials',
-                    'name': 'gcp-credentials',
-                }],
             }],
-            'volumes': [{
-                'name': 'gcp-credentials',
-                'secret': {
-                    'secretName': 'user-gcp-sa',
-                },
-            }],
-            'serviceAccountName': 'default'}
+            'serviceAccountName': self._service_account}
     }
     return content
 
@@ -162,7 +160,7 @@ class ContainerBuilder(object):
     Args:
       local_dir (str): local directory that stores all the necessary build files
       docker_filename (str): the path of the Dockerfile relative to the local_dir
-      target_image (str): the target image tag to push the final image.
+      target_image (str): The container image name where the data will be pushed. Can include tag. If not specified, the function will use the default_image_name specified when creating ContainerBuilder.
       timeout (int): time out in seconds. Default: 1000
     """
     target_image = target_image or self._get_default_image_name()
@@ -181,8 +179,8 @@ class ContainerBuilder(object):
                                                docker_filename=docker_filename,
                                                target_image=target_image)
       logging.info('Start a kaniko job for build.')
-      from ..compiler._k8s_helper import K8sHelper
-      k8s_helper = K8sHelper()
+      from ._k8s_job_helper import K8sJobHelper
+      k8s_helper = K8sJobHelper()
       result_pod_obj = k8s_helper.run_job(kaniko_spec, timeout)
       logging.info('Kaniko job complete.')
 

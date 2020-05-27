@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+/* eslint-disable */
+// Because this is test utils.
+
 import * as React from 'react';
 // @ts-ignore
 import createRouterContext from 'react-router-test-context';
@@ -22,6 +25,8 @@ import { ToolbarActionConfig } from './components/Toolbar';
 import { match } from 'react-router';
 import { mount, ReactWrapper } from 'enzyme';
 import { object } from 'prop-types';
+import { format } from 'prettier';
+import snapshotDiff from 'snapshot-diff';
 
 export default class TestUtils {
   /**
@@ -50,7 +55,7 @@ export default class TestUtils {
    * Adds a one-time mock implementation to the provided spy that mimics an error
    * network response
    */
-  public static makeErrorResponseOnce(spy: jest.MockInstance<{}>, message: string): void {
+  public static makeErrorResponseOnce(spy: jest.MockInstance<unknown>, message: string): void {
     spy.mockImplementationOnce(() => {
       throw {
         text: () => Promise.resolve(message),
@@ -64,11 +69,16 @@ export default class TestUtils {
    * to be set after component initialization.
    */
   // tslint:disable-next-line:variable-name
-  public static generatePageProps(PageElement: new (_: PageProps) => Page<any, any>,
-    location: Location, matchValue: match,
-    historyPushSpy: jest.SpyInstance | null, updateBannerSpy: jest.SpyInstance | null,
-    updateDialogSpy: jest.SpyInstance | null, updateToolbarSpy: jest.SpyInstance | null,
-    updateSnackbarSpy: jest.SpyInstance | null): PageProps {
+  public static generatePageProps(
+    PageElement: new (_: PageProps) => Page<any, any>,
+    location: Location,
+    matchValue: match,
+    historyPushSpy: jest.SpyInstance<unknown> | null,
+    updateBannerSpy: jest.SpyInstance<unknown> | null,
+    updateDialogSpy: jest.SpyInstance<unknown> | null,
+    updateToolbarSpy: jest.SpyInstance<unknown> | null,
+    updateSnackbarSpy: jest.SpyInstance<unknown> | null,
+  ): PageProps {
     const pageProps = {
       history: { push: historyPushSpy } as any,
       location: location as any,
@@ -88,9 +98,57 @@ export default class TestUtils {
     return pageProps;
   }
 
-  public static getToolbarButton(updateToolbarSpy: jest.SpyInstance, buttonKey: string): ToolbarActionConfig {
+  public static getToolbarButton(
+    updateToolbarSpy: jest.SpyInstance<unknown>,
+    buttonKey: string,
+  ): ToolbarActionConfig {
     const lastCallIdx = updateToolbarSpy.mock.calls.length - 1;
     const lastCall = updateToolbarSpy.mock.calls[lastCallIdx][0];
     return lastCall.actions[buttonKey];
   }
+}
+
+/**
+ * Generate diff text for two HTML strings.
+ * Recommend providing base and update annotations to clarify context in the diff directly.
+ */
+export function diffHTML({
+  base,
+  update,
+  baseAnnotation,
+  updateAnnotation,
+}: {
+  base: string;
+  baseAnnotation?: string;
+  update: string;
+  updateAnnotation?: string;
+}) {
+  return diff({
+    base: formatHTML(base),
+    update: formatHTML(update),
+    baseAnnotation,
+    updateAnnotation,
+  });
+}
+
+export function diff({
+  base,
+  update,
+  baseAnnotation,
+  updateAnnotation,
+}: {
+  base: string;
+  baseAnnotation?: string;
+  update: string;
+  updateAnnotation?: string;
+}) {
+  return snapshotDiff(base, update, {
+    stablePatchmarks: true, // Avoid line numbers in diff, so that diffs are stable against irrelevant changes
+    aAnnotation: baseAnnotation,
+    bAnnotation: updateAnnotation,
+  });
+}
+
+export function formatHTML(html: string): string {
+  return format(html, { parser: 'html' });
 }

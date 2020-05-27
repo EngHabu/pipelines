@@ -24,20 +24,33 @@ import { ListRequest } from './Apis';
 import { Row, Column, ExpandState } from '../components/CustomTable';
 import { padding } from '../Css';
 import { classes } from 'typestyle';
-import { Value, Artifact, Execution } from '../generated/src/apis/metadata/metadata_store_pb';
 import { CustomTableRow, css } from '../components/CustomTableRow';
-import { ServiceError } from '../generated/src/apis/metadata/metadata_store_service_pb_service';
 
 export const logger = {
   error: (...args: any[]) => {
     // tslint:disable-next-line:no-console
     console.error(...args);
   },
+  warn: (...args: any[]) => {
+    // tslint:disable-next-line:no-console
+    console.warn(...args);
+  },
   verbose: (...args: any[]) => {
     // tslint:disable-next-line:no-console
     console.log(...args);
   },
 };
+
+export function extendError(err: any, extraMessage?: string): any {
+  if (err.message && typeof err.message === 'string') {
+    err.message = extraMessage + ': ' + err.message;
+  }
+  return err;
+}
+
+export function rethrow(err: any, extraMessage?: string): never {
+  throw extendError(err, extraMessage);
+}
 
 export function formatDateString(date: Date | string | undefined): string {
   if (typeof date === 'string') {
@@ -95,10 +108,7 @@ export function getRunDuration(run?: ApiRun): string {
 }
 
 export function getRunDurationFromWorkflow(workflow?: Workflow): string {
-  if (!workflow
-    || !workflow.status
-    || !workflow.status.startedAt
-    || !workflow.status.finishedAt) {
+  if (!workflow || !workflow.status || !workflow.status.startedAt || !workflow.status.finishedAt) {
     return '-';
   }
 
@@ -110,55 +120,13 @@ export function s(items: any[] | number): string {
   return length === 1 ? '' : 's';
 }
 
-/** Title cases a string by capitalizing the first letter of each word. */
-export function titleCase(str: string): string {
-  return str.split(/[\s_-]/)
-    .map((w) => `${w.charAt(0).toUpperCase()}${w.slice(1)}`)
-    .join(' ');
-}
-
-/**
- * Safely extracts the named property or custom property from the provided
- * Artifact or Execution.
- * @param resource
- * @param propertyName
- * @param fromCustomProperties
- */
-export function getResourceProperty(resource: Artifact | Execution,
-  propertyName: string, fromCustomProperties = false): string | number | null {
-  const props = fromCustomProperties
-    ? resource.getCustomPropertiesMap()
-    : resource.getPropertiesMap();
-
-  return (props && props.get(propertyName) && getMetadataValue(props.get(propertyName)))
-    || null;
+interface ServiceError {
+  message: string;
+  code?: number;
 }
 
 export function serviceErrorToString(error: ServiceError): string {
-  return `Error: ${error.message}. Code: ${error.code}`;
-}
-
-/**
- * Extracts an int, double, or string from a metadata Value. Returns '' if no value is found.
- * @param value
- */
-export function getMetadataValue(value?: Value): string | number {
-  if (!value) {
-    return '';
-  }
-
-  if (value.hasDoubleValue()) {
-    return value.getDoubleValue() || '';
-  }
-
-  if (value.hasIntValue()) {
-    return value.getIntValue() || '';
-  }
-
-  if (value.hasStringValue()) {
-    return value.getStringValue() || '';
-  }
-  return '';
+  return `Error: ${error.message}.${error.code ? ` Code: ${error.code}` : ''}`;
 }
 
 /**
@@ -169,7 +137,7 @@ export function getMetadataValue(value?: Value): string | number {
 export function rowFilterFn(request: ListRequest): (r: Row) => boolean {
   // TODO: We are currently searching across all properties of all artifacts. We should figure
   // what the most useful fields are and limit filtering to those
-  return (r) => {
+  return r => {
     if (!request.filter) {
       return true;
     }
@@ -181,8 +149,17 @@ export function rowFilterFn(request: ListRequest): (r: Row) => boolean {
         return true;
       }
       // TODO: Extend this to look at more than a single predicate
-      const filterString = '' + (filter.predicates[0].int_value || filter.predicates[0].long_value || filter.predicates[0].string_value);
-      return (r.otherFields.join('').toLowerCase().indexOf(filterString.toLowerCase()) > -1);
+      const filterString =
+        '' +
+        (filter.predicates[0].int_value ||
+          filter.predicates[0].long_value ||
+          filter.predicates[0].string_value);
+      return (
+        r.otherFields
+          .join('')
+          .toLowerCase()
+          .indexOf(filterString.toLowerCase()) > -1
+      );
     } catch (err) {
       logger.error('Error parsing request filter!', err);
       return true;
@@ -190,7 +167,10 @@ export function rowFilterFn(request: ListRequest): (r: Row) => boolean {
   };
 }
 
-export function rowCompareFn(request: ListRequest, columns: Column[]): (r1: Row, r2: Row) => number {
+export function rowCompareFn(
+  request: ListRequest,
+  columns: Column[],
+): (r1: Row, r2: Row) => number {
   return (r1, r2) => {
     if (!request.sortBy) {
       return -1;
@@ -201,7 +181,7 @@ export function rowCompareFn(request: ListRequest, columns: Column[]): (r1: Row,
       ? request.sortBy.substring(0, request.sortBy.length - descSuffix.length)
       : request.sortBy;
 
-    const sortIndex = columns.findIndex((c) => cleanedSortBy === c.sortKey);
+    const sortIndex = columns.findIndex(c => cleanedSortBy === c.sortKey);
 
     // Convert null to string to avoid null comparison behavior
     const compare = (r1.otherFields[sortIndex] || '') < (r2.otherFields[sortIndex] || '');
@@ -260,7 +240,7 @@ export function groupRows(rows: Row[]): CollapsedAndExpandedRows {
       // Remove the grouping column text for all but the first row in the group because it will be
       // redundant within an expanded group.
       const hiddenRows = rowsInGroup.slice(1);
-      hiddenRows.forEach(row => row.otherFields[0] = '');
+      hiddenRows.forEach(row => (row.otherFields[0] = ''));
 
       // Add this group of rows sharing a pipeline to the list of grouped rows
       collapsedAndExpandedRows.expandedRows.set(index, hiddenRows);
@@ -274,19 +254,20 @@ export function groupRows(rows: Row[]): CollapsedAndExpandedRows {
  * row.
  * @param index
  */
-export function getExpandedRow(expandedRows: Map<number, Row[]>, columns: Column[]): (index: number) => React.ReactNode {
+export function getExpandedRow(
+  expandedRows: Map<number, Row[]>,
+  columns: Column[],
+): (index: number) => React.ReactNode {
   return (index: number) => {
     const rows = expandedRows.get(index) || [];
 
     return (
       <div className={padding(65, 'l')}>
-        {
-          rows.map((r, rindex) => (
-            <div className={classes('tableRow', css.row)} key={rindex}>
-              <CustomTableRow row={r} columns={columns} />
-            </div>
-          ))
-        }
+        {rows.map((r, rindex) => (
+          <div className={classes('tableRow', css.row)} key={rindex}>
+            <CustomTableRow row={r} columns={columns} />
+          </div>
+        ))}
       </div>
     );
   };
@@ -307,4 +288,53 @@ export function generateGcsConsoleUri(gcsUri: string): string | undefined {
   }
 
   return GCS_CONSOLE_BASE + gcsUri.substring(GCS_URI_PREFIX.length);
+}
+
+const MINIO_URI_PREFIX = 'minio://';
+
+/**
+ * Generates the path component of the url to retrieve an artifact.
+ *
+ * @param source source of the artifact. Can be "minio", "s3", "http", "https", or "gcs".
+ * @param bucket bucket where the artifact is stored, value is assumed to be uri encoded.
+ * @param key path to the artifact, value is assumed to be uri encoded.
+ * @param peek number of characters or bytes to return. If not provided, the entire content of the artifact will be returned.
+ */
+export function generateArtifactUrl(
+  source: string,
+  bucket: string,
+  key: string,
+  peek?: number,
+): string {
+  return `artifacts/get${buildQuery({ source, bucket, key, peek })}`;
+}
+
+/**
+ * Generates an HTTPS API URL from minio:// uri
+ *
+ * @param minioUri Minio uri that starts with minio://, like minio://ml-pipeline/path/file
+ * @returns A URL that leads to the artifact data. Returns undefined when minioUri is not valid.
+ */
+export function generateMinioArtifactUrl(minioUri: string, peek?: number): string | undefined {
+  if (!minioUri.startsWith(MINIO_URI_PREFIX)) {
+    return undefined;
+  }
+
+  // eslint-disable-next-line no-useless-escape
+  const matches = minioUri.match(/^minio:\/\/([^\/]+)\/(.+)$/);
+  if (matches == null) {
+    return undefined;
+  }
+  return generateArtifactUrl('minio', matches[1], matches[2], peek);
+}
+
+export function buildQuery(queriesMap: { [key: string]: string | number | undefined }): string {
+  const queryContent = Object.entries(queriesMap)
+    .filter((entry): entry is [string, string | number] => entry[1] != null)
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .join('&');
+  if (!queryContent) {
+    return '';
+  }
+  return `?${queryContent}`;
 }

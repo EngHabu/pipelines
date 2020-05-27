@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
+import { NodePhase } from './StatusUtils';
 import {
-  logger,
-  formatDateString,
   enabledDisplayString,
+  formatDateString,
+  generateMinioArtifactUrl,
   getRunDuration,
   getRunDurationFromWorkflow,
+  logger,
 } from './Utils';
-import { NodePhase } from './StatusUtils';
 
 describe('Utils', () => {
   describe('log', () => {
@@ -172,7 +173,7 @@ describe('Utils', () => {
       const workflow = {
         status: {
           finishedAt: 'some end',
-        }
+        },
       } as any;
       expect(getRunDurationFromWorkflow(workflow)).toBe('-');
     });
@@ -181,7 +182,7 @@ describe('Utils', () => {
       const workflow = {
         status: {
           startedAt: 'some end',
-        }
+        },
       } as any;
       expect(getRunDurationFromWorkflow(workflow)).toBe('-');
     });
@@ -191,7 +192,7 @@ describe('Utils', () => {
         status: {
           finishedAt: new Date(2018, 1, 3, 3, 56, 25).toISOString(),
           startedAt: new Date(2018, 1, 3, 3, 55, 30).toISOString(),
-        }
+        },
       } as any;
       expect(getRunDurationFromWorkflow(workflow)).toBe('0:00:55');
     });
@@ -201,7 +202,7 @@ describe('Utils', () => {
         status: {
           finishedAt: new Date(2018, 1, 3, 3, 59, 25).toISOString(),
           startedAt: new Date(2018, 1, 3, 3, 55, 10).toISOString(),
-        }
+        },
       } as any;
       expect(getRunDurationFromWorkflow(workflow)).toBe('0:04:15');
     });
@@ -211,7 +212,7 @@ describe('Utils', () => {
         status: {
           finishedAt: new Date(2018, 1, 3, 4, 55, 10).toISOString(),
           startedAt: new Date(2018, 1, 3, 3, 55, 10).toISOString(),
-        }
+        },
       } as any;
       expect(getRunDurationFromWorkflow(workflow)).toBe('1:00:00');
     });
@@ -221,7 +222,7 @@ describe('Utils', () => {
         status: {
           finishedAt: new Date(2018, 1, 3, 4, 56, 11).toISOString(),
           startedAt: new Date(2018, 1, 3, 3, 55, 10).toISOString(),
-        }
+        },
       } as any;
       expect(getRunDurationFromWorkflow(workflow)).toBe('1:01:01');
     });
@@ -231,9 +232,25 @@ describe('Utils', () => {
         status: {
           finishedAt: new Date(2018, 1, 2, 3, 55, 11).toISOString(),
           startedAt: new Date(2018, 1, 2, 3, 55, 13).toISOString(),
-        }
+        },
       } as any;
       expect(getRunDurationFromWorkflow(workflow)).toBe('-0:00:02');
+    });
+  });
+
+  describe('generateMinioArtifactUrl', () => {
+    it('handles minio:// URIs', () => {
+      expect(generateMinioArtifactUrl('minio://my-bucket/a/b/c')).toBe(
+        'artifacts/get?source=minio&bucket=my-bucket&key=a%2Fb%2Fc',
+      );
+    });
+
+    it('handles non-minio URIs', () => {
+      expect(generateMinioArtifactUrl('minio://my-bucket-a-b-c')).toBe(undefined);
+    });
+
+    it('handles broken minio URIs', () => {
+      expect(generateMinioArtifactUrl('ZZZ://my-bucket/a/b/c')).toBe(undefined);
     });
   });
 });

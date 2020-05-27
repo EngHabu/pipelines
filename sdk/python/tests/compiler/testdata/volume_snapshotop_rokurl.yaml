@@ -8,7 +8,7 @@ metadata:
 spec:
   arguments:
     parameters:
-    - name: rok-url
+    - name: rok_url
   entrypoint: volumesnapshotop-rokurl
   serviceAccountName: pipeline-runner
   templates:
@@ -16,6 +16,9 @@ spec:
       parameters:
       - name: create-volume-1-name
     name: create-snapshot-1
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
     outputs:
       parameters:
       - name: create-snapshot-1-manifest
@@ -37,6 +40,9 @@ spec:
       parameters:
       - name: create-volume-2-name
     name: create-snapshot-2
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
     outputs:
       parameters:
       - name: create-snapshot-2-manifest
@@ -56,8 +62,11 @@ spec:
       successCondition: status.readyToUse == true
   - inputs:
       parameters:
-      - name: rok-url
+      - name: rok_url
     name: create-volume-1
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
     outputs:
       parameters:
       - name: create-volume-1-manifest
@@ -72,7 +81,7 @@ spec:
     resource:
       action: create
       manifest: "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  annotations:\n\
-        \    rok/origin: '{{inputs.parameters.rok-url}}'\n  name: '{{workflow.name}}-vol1'\n\
+        \    rok/origin: '{{inputs.parameters.rok_url}}'\n  name: '{{workflow.name}}-vol1'\n\
         spec:\n  accessModes:\n  - ReadWriteMany\n  resources:\n    requests:\n  \
         \    storage: 1Gi\n"
   - inputs:
@@ -80,6 +89,9 @@ spec:
       - name: create-snapshot-1-name
       - name: create-snapshot-1-size
     name: create-volume-2
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
     outputs:
       parameters:
       - name: create-volume-2-manifest
@@ -102,6 +114,9 @@ spec:
       - name: create-snapshot-2-name
       - name: create-snapshot-2-size
     name: create-volume-3
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
     outputs:
       parameters:
       - name: create-volume-3-manifest
@@ -133,6 +148,13 @@ spec:
       parameters:
       - name: create-volume-1-name
     name: step1-concat
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+    volumes:
+    - name: create-volume-1
+      persistentVolumeClaim:
+        claimName: '{{inputs.parameters.create-volume-1-name}}'
   - container:
       command:
       - gunzip
@@ -146,6 +168,13 @@ spec:
       parameters:
       - name: create-volume-2-name
     name: step2-gunzip
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+    volumes:
+    - name: create-volume-2
+      persistentVolumeClaim:
+        claimName: '{{inputs.parameters.create-volume-2-name}}'
   - container:
       command:
       - cat
@@ -158,6 +187,13 @@ spec:
       parameters:
       - name: create-volume-3-name
     name: step3-output
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+    volumes:
+    - name: create-volume-3
+      persistentVolumeClaim:
+        claimName: '{{inputs.parameters.create-volume-3-name}}'
   - dag:
       tasks:
       - arguments:
@@ -180,8 +216,8 @@ spec:
         template: create-snapshot-2
       - arguments:
           parameters:
-          - name: rok-url
-            value: '{{inputs.parameters.rok-url}}'
+          - name: rok_url
+            value: '{{inputs.parameters.rok_url}}'
         name: create-volume-1
         template: create-volume-1
       - arguments:
@@ -230,15 +266,5 @@ spec:
         template: step3-output
     inputs:
       parameters:
-      - name: rok-url
+      - name: rok_url
     name: volumesnapshotop-rokurl
-  volumes:
-  - name: create-volume-1
-    persistentVolumeClaim:
-      claimName: '{{inputs.parameters.create-volume-1-name}}'
-  - name: create-volume-2
-    persistentVolumeClaim:
-      claimName: '{{inputs.parameters.create-volume-2-name}}'
-  - name: create-volume-3
-    persistentVolumeClaim:
-      claimName: '{{inputs.parameters.create-volume-3-name}}'

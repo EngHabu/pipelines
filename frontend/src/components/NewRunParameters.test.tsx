@@ -15,7 +15,7 @@
  */
 
 import * as React from 'react';
-import { shallow } from 'enzyme';
+import { mount, shallow } from 'enzyme';
 import NewRunParameters, { NewRunParametersProps } from './NewRunParameters';
 
 describe('NewRunParameters', () => {
@@ -28,7 +28,7 @@ describe('NewRunParameters', () => {
     expect(shallow(<NewRunParameters {...props} />)).toMatchSnapshot();
   });
 
-  it('does not display any text fields if there are parameters', () => {
+  it('does not display any text fields if there are no parameters', () => {
     const props = {
       handleParamChange: jest.fn(),
       initialParams: [],
@@ -37,18 +37,39 @@ describe('NewRunParameters', () => {
     expect(shallow(<NewRunParameters {...props} />)).toMatchSnapshot();
   });
 
+  it('clicking the open editor button for json parameters displays an editor', () => {
+    const handleParamChange = jest.fn();
+    const props = {
+      handleParamChange,
+      initialParams: [{ name: 'testParam', value: '{"test":"value"}' }],
+      titleMessage: 'Specify json parameters required by the pipeline',
+    } as NewRunParametersProps;
+    const tree = mount(<NewRunParameters {...props} />);
+    tree
+      .findWhere(el => el.text() === 'Open Json Editor')
+      .hostNodes()
+      .find('Button')
+      .simulate('click');
+    expect(handleParamChange).toHaveBeenCalledTimes(1);
+    expect(handleParamChange).toHaveBeenLastCalledWith(0, '{\n  "test": "value"\n}');
+    expect(tree.find('Editor')).toMatchSnapshot();
+  });
+
   it('fires handleParamChange callback on change', () => {
     const handleParamChange = jest.fn();
     const props = {
       handleParamChange,
       initialParams: [
         { name: 'testParam1', value: 'testVal1' },
-        { name: 'testParam2', value: 'testVal2' }
+        { name: 'testParam2', value: 'testVal2' },
       ],
       titleMessage: 'Specify parameters required by the pipeline',
     } as NewRunParametersProps;
-    const tree = shallow(<NewRunParameters {...props} />);
-    tree.find('#newRunPipelineParam1').simulate('change', { target: { value: 'test param value' } });
+
+    const tree = mount(<NewRunParameters {...props} />);
+    tree
+      .find('input#newRunPipelineParam1')
+      .simulate('change', { target: { value: 'test param value' } });
     expect(handleParamChange).toHaveBeenCalledTimes(1);
     expect(handleParamChange).toHaveBeenLastCalledWith(1, 'test param value');
   });

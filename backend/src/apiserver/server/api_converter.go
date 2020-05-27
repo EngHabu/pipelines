@@ -26,11 +26,25 @@ import (
 )
 
 func ToApiExperiment(experiment *model.Experiment) *api.Experiment {
+	resourceReferences := []*api.ResourceReference(nil)
+	if common.IsMultiUserMode() {
+		resourceReferences = []*api.ResourceReference{
+			&api.ResourceReference{
+				Key: &api.ResourceKey{
+					Type: api.ResourceType_NAMESPACE,
+					Id:   experiment.Namespace,
+				},
+				Relationship: api.Relationship_OWNER,
+			},
+		}
+	}
 	return &api.Experiment{
-		Id:          experiment.UUID,
-		Name:        experiment.Name,
-		Description: experiment.Description,
-		CreatedAt:   &timestamp.Timestamp{Seconds: experiment.CreatedAtInSec},
+		Id:                 experiment.UUID,
+		Name:               experiment.Name,
+		Description:        experiment.Description,
+		CreatedAt:          &timestamp.Timestamp{Seconds: experiment.CreatedAtInSec},
+		ResourceReferences: resourceReferences,
+		StorageState:       api.Experiment_StorageState(api.Experiment_StorageState_value[experiment.StorageState]),
 	}
 }
 
@@ -42,13 +56,6 @@ func ToApiExperiments(experiments []*model.Experiment) []*api.Experiment {
 	return apiExperiments
 }
 
-func ToModelExperiment(experiment *api.Experiment) *model.Experiment {
-	return &model.Experiment{
-		Name:        experiment.Name,
-		Description: experiment.Description,
-	}
-}
-
 func ToApiPipeline(pipeline *model.Pipeline) *api.Pipeline {
 	params, err := toApiParameters(pipeline.Parameters)
 	if err != nil {
@@ -58,22 +65,21 @@ func ToApiPipeline(pipeline *model.Pipeline) *api.Pipeline {
 		}
 	}
 
-	// TODO(jingzhang36): uncomment when exposing versions to API.
-	// defaultVersion, err := ToApiPipelineVersion(pipeline.DefaultVersion)
-	// if err != nil {
-	// 	return &api.Pipeline{
-	// 		Id:    pipeline.UUID,
-	// 		Error: err.Error(),
-	// 	}
-	// }
+	defaultVersion, err := ToApiPipelineVersion(pipeline.DefaultVersion)
+	if err != nil {
+		return &api.Pipeline{
+			Id:    pipeline.UUID,
+			Error: err.Error(),
+		}
+	}
 
 	return &api.Pipeline{
-		Id:          pipeline.UUID,
-		CreatedAt:   &timestamp.Timestamp{Seconds: pipeline.CreatedAtInSec},
-		Name:        pipeline.Name,
-		Description: pipeline.Description,
-		Parameters:  params,
-		// DefaultVersion: defaultVersion,
+		Id:             pipeline.UUID,
+		CreatedAt:      &timestamp.Timestamp{Seconds: pipeline.CreatedAtInSec},
+		Name:           pipeline.Name,
+		Description:    pipeline.Description,
+		Parameters:     params,
+		DefaultVersion: defaultVersion,
 	}
 }
 
@@ -160,15 +166,16 @@ func toApiRun(run *model.Run) *api.Run {
 		}
 	}
 	return &api.Run{
-		CreatedAt:    &timestamp.Timestamp{Seconds: run.CreatedAtInSec},
-		Id:           run.UUID,
-		Metrics:      metrics,
-		Name:         run.DisplayName,
-		StorageState: api.Run_StorageState(api.Run_StorageState_value[run.StorageState]),
-		Description:  run.Description,
-		ScheduledAt:  &timestamp.Timestamp{Seconds: run.ScheduledAtInSec},
-		FinishedAt:   &timestamp.Timestamp{Seconds: run.FinishedAtInSec},
-		Status:       run.Conditions,
+		CreatedAt:      &timestamp.Timestamp{Seconds: run.CreatedAtInSec},
+		Id:             run.UUID,
+		Metrics:        metrics,
+		Name:           run.DisplayName,
+		ServiceAccount: run.ServiceAccount,
+		StorageState:   api.Run_StorageState(api.Run_StorageState_value[run.StorageState]),
+		Description:    run.Description,
+		ScheduledAt:    &timestamp.Timestamp{Seconds: run.ScheduledAtInSec},
+		FinishedAt:     &timestamp.Timestamp{Seconds: run.FinishedAtInSec},
+		Status:         run.Conditions,
 		PipelineSpec: &api.PipelineSpec{
 			PipelineId:       run.PipelineId,
 			PipelineName:     run.PipelineName,
@@ -209,12 +216,14 @@ func ToApiJob(job *model.Job) *api.Job {
 	return &api.Job{
 		Id:             job.UUID,
 		Name:           job.DisplayName,
+		ServiceAccount: job.ServiceAccount,
 		Description:    job.Description,
 		Enabled:        job.Enabled,
 		CreatedAt:      &timestamp.Timestamp{Seconds: job.CreatedAtInSec},
 		UpdatedAt:      &timestamp.Timestamp{Seconds: job.UpdatedAtInSec},
 		Status:         job.Conditions,
 		MaxConcurrency: job.MaxConcurrency,
+		NoCatchup:      job.NoCatchup,
 		Trigger:        toApiTrigger(job.Trigger),
 		PipelineSpec: &api.PipelineSpec{
 			PipelineId:       job.PipelineId,
@@ -267,6 +276,10 @@ func toApiResourceType(modelType common.ResourceType) api.ResourceType {
 		return api.ResourceType_EXPERIMENT
 	case common.Job:
 		return api.ResourceType_JOB
+	case common.PipelineVersion:
+		return api.ResourceType_PIPELINE_VERSION
+	case common.Namespace:
+		return api.ResourceType_NAMESPACE
 	default:
 		return api.ResourceType_UNKNOWN_RESOURCE_TYPE
 	}
@@ -298,7 +311,7 @@ func toApiTrigger(trigger model.Trigger) *api.Trigger {
 		return &api.Trigger{Trigger: &api.Trigger_CronSchedule{CronSchedule: &cronSchedule}}
 	}
 
-	if trigger.IntervalSecond != nil {
+	if trigger.IntervalSecond != nil && *trigger.IntervalSecond != 0 {
 		var periodicSchedule api.PeriodicSchedule
 		periodicSchedule.IntervalSecond = *trigger.IntervalSecond
 		if trigger.PeriodicScheduleStartTimeInSec != nil {

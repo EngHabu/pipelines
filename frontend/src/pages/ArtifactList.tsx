@@ -14,20 +14,40 @@
  * limitations under the License.
  */
 
+import {
+  Api,
+  Artifact,
+  ArtifactProperties,
+  ArtifactCustomProperties,
+  ListRequest,
+  ArtifactType,
+  getArtifactCreationTime,
+  getArtifactTypes,
+  getResourcePropertyViaFallBack,
+  GetArtifactsRequest,
+} from '@kubeflow/frontend';
 import * as React from 'react';
-import CustomTable, { Column, Row, ExpandState, CustomRendererProps } from '../components/CustomTable';
+import { Link } from 'react-router-dom';
+import { classes } from 'typestyle';
+import CustomTable, {
+  Column,
+  Row,
+  ExpandState,
+  CustomRendererProps,
+} from '../components/CustomTable';
 import { Page } from './Page';
 import { ToolbarProps } from '../components/Toolbar';
-import { classes } from 'typestyle';
 import { commonCss, padding } from '../Css';
-import { getResourceProperty, rowCompareFn, rowFilterFn, groupRows, getExpandedRow, serviceErrorToString } from '../lib/Utils';
+import {
+  rowCompareFn,
+  rowFilterFn,
+  groupRows,
+  getExpandedRow,
+  serviceErrorToString,
+  CollapsedAndExpandedRows,
+} from '../lib/Utils';
 import { RoutePageFactory } from '../components/Router';
-import { Link } from 'react-router-dom';
-import { Artifact, ArtifactType } from '../generated/src/apis/metadata/metadata_store_pb';
-import { ArtifactProperties, ArtifactCustomProperties, ListRequest, Apis } from '../lib/Apis';
-import { GetArtifactTypesRequest, GetArtifactsRequest } from '../generated/src/apis/metadata/metadata_store_service_pb';
-import { getArtifactCreationTime } from '../lib/MetadataUtils';
-import { GcsLink } from '../components/GcsLink';
+import { ArtifactLink } from '../components/ArtifactLink';
 
 interface ArtifactListState {
   artifacts: Artifact[];
@@ -36,8 +56,14 @@ interface ArtifactListState {
   columns: Column[];
 }
 
+const ARTIFACT_PROPERTY_REPOS = [ArtifactProperties, ArtifactCustomProperties];
+const PIPELINE_WORKSPACE_FIELDS = ['RUN_ID', 'PIPELINE_NAME', 'WORKSPACE'];
+const NAME_FIELDS = ['NAME'];
+
 class ArtifactList extends Page<{}, ArtifactListState> {
   private tableRef = React.createRef<CustomTable>();
+  private api = Api.getInstance();
+  private artifactTypesMap: Map<number, ArtifactType>;
 
   constructor(props: any) {
     super(props);
@@ -48,7 +74,7 @@ class ArtifactList extends Page<{}, ArtifactListState> {
           customRenderer: this.nameCustomRenderer,
           flex: 2,
           label: 'Pipeline/Workspace',
-          sortKey: 'pipelineName'
+          sortKey: 'pipelineName',
         },
         {
           customRenderer: this.nameCustomRenderer,
@@ -81,7 +107,8 @@ class ArtifactList extends Page<{}, ArtifactListState> {
     const { rows, columns } = this.state;
     return (
       <div className={classes(commonCss.page, padding(20, 'lr'))}>
-        <CustomTable ref={this.tableRef}
+        <CustomTable
+          ref={this.tableRef}
           columns={columns}
           rows={rows}
           disablePaging={true}
@@ -91,7 +118,8 @@ class ArtifactList extends Page<{}, ArtifactListState> {
           initialSortOrder='asc'
           getExpandComponent={this.getExpandedArtifactsRow}
           toggleExpansion={this.toggleRowExpand}
-          emptyMessage='No artifacts found.' />
+          emptyMessage='No artifacts found.'
+        />
       </div>
     );
   }
@@ -103,83 +131,103 @@ class ArtifactList extends Page<{}, ArtifactListState> {
   }
 
   private async reload(request: ListRequest): Promise<string> {
-    Apis.getMetadataServiceClient().getArtifacts(new GetArtifactsRequest(), (err, res) => {
-      // Code === 5 means no record found in backend. This is a temporary workaround.
-      // TODO: remove err.code !== 5 check when backend is fixed.
-      if (err && err.code !== 5) {
-        this.showPageError(serviceErrorToString(err));
-        return;
-      }
-
-      const artifacts = (res && res.getArtifactsList()) || [];
-      this.getRowsFromArtifacts(request, artifacts);
+    // TODO: Consider making an Api method for returning and caching types
+    if (!this.artifactTypesMap || !this.artifactTypesMap.size) {
+      this.artifactTypesMap = await getArtifactTypes(
+        this.api.metadataStoreService,
+        this.showPageError.bind(this),
+      );
+    }
+    if (!this.state.artifacts.length) {
+      const artifacts = await this.getArtifacts();
       this.clearBanner();
-    });
+      const collapsedAndExpandedRows = await this.getRowsFromArtifacts(request, artifacts);
+      if (collapsedAndExpandedRows) {
+        this.setState({
+          artifacts,
+          expandedRows: collapsedAndExpandedRows.expandedRows,
+          rows: collapsedAndExpandedRows.collapsedRows,
+        });
+      }
+    }
     return '';
   }
 
+  private nameCustomRenderer: React.FC<CustomRendererProps<string>> = (
+    props: CustomRendererProps<string>,
+  ) => {
+    return (
+      <Link
+        onClick={e => e.stopPropagation()}
+        className={commonCss.link}
+        to={RoutePageFactory.artifactDetails(Number(props.id))}
+      >
+        {props.value}
+      </Link>
+    );
+  };
 
-  private nameCustomRenderer: React.FC<CustomRendererProps<string>> =
-    (props: CustomRendererProps<string>) => {
-      const [artifactType, artifactId] = props.id.split(':');
-      return (
-        <Link onClick={(e) => e.stopPropagation()}
-          className={commonCss.link}
-          to={RoutePageFactory.artifactDetails(artifactType, Number(artifactId))}>
-          {props.value}
-        </Link>
-      );
+  private uriCustomRenderer: React.FC<CustomRendererProps<string>> = ({ value }) => (
+    <ArtifactLink artifactUri={value} />
+  );
+
+  private async getArtifacts(): Promise<Artifact[]> {
+    try {
+      const response = await this.api.metadataStoreService.getArtifacts(new GetArtifactsRequest());
+      return response.getArtifactsList();
+    } catch (err) {
+      // Code === 5 means no record found in backend. This is a temporary workaround.
+      // TODO: remove err.code !== 5 check when backend is fixed.
+      if (err.code !== 5) {
+        this.showPageError(serviceErrorToString(err));
+      }
     }
-
-  private uriCustomRenderer: React.FC<CustomRendererProps<string>> =
-    ({ value }) => <GcsLink gcsUri={value} />
+    return [];
+  }
 
   /**
    * Temporary solution to apply sorting, filtering, and pagination to the
    * local list of artifacts until server-side handling is available
    * TODO: Replace once https://github.com/kubeflow/metadata/issues/73 is done.
    * @param request
+   * @param artifacts
    */
-  private getRowsFromArtifacts(request: ListRequest, artifacts: Artifact[]): void {
-    const artifactTypesMap = new Map<number, ArtifactType>();
-    // TODO: Consider making an Api method for returning and caching types
-    Apis.getMetadataServiceClient().getArtifactTypes(new GetArtifactTypesRequest(), async (err, res) => {
-      if (err) {
-        this.showPageError(serviceErrorToString(err));
-        return;
-      }
-
-      (res && res.getArtifactTypesList() || []).forEach((artifactType) => {
-        artifactTypesMap.set(artifactType.getId()!, artifactType);
-      });
-
-      try {
-        // TODO: When backend supports sending creation time back when we list
-        // artifacts, let's use it directly.
-        const artifactsWithCreationTimes = await Promise.all(artifacts.map(async (artifact) => {
+  private async getRowsFromArtifacts(
+    request: ListRequest,
+    artifacts: Artifact[],
+  ): Promise<CollapsedAndExpandedRows | undefined> {
+    try {
+      // TODO: When backend supports sending creation time back when we list
+      // artifacts, let's use it directly.
+      const artifactsWithCreationTimes = await Promise.all(
+        artifacts.map(async artifact => {
           const artifactId = artifact.getId();
           if (!artifactId) {
             return { artifact };
           }
 
-          return ({
+          return {
             artifact,
-            creationTime: await getArtifactCreationTime(artifactId),
-          });
-        }));
+            creationTime: await getArtifactCreationTime(artifactId, this.api.metadataStoreService),
+          };
+        }),
+      );
 
-        const collapsedAndExpandedRows = groupRows(
-          artifactsWithCreationTimes.map(({ artifact, creationTime }) => {
+      return groupRows(
+        artifactsWithCreationTimes
+          .map(({ artifact, creationTime }) => {
             const typeId = artifact.getTypeId();
-            const type = (typeId && artifactTypesMap && artifactTypesMap.get(typeId))
-              ? artifactTypesMap.get(typeId)!.getName()
-              : typeId;
+            const artifactType = this.artifactTypesMap!.get(typeId);
+            const type = artifactType ? artifactType.getName() : artifact.getTypeId();
             return {
-              id: `${type}:${artifact.getId()}`, // Join with colon so we can build the link
+              id: `${artifact.getId()}`,
               otherFields: [
-                getResourceProperty(artifact, ArtifactProperties.PIPELINE_NAME)
-                || getResourceProperty(artifact, ArtifactCustomProperties.WORKSPACE, true),
-                getResourceProperty(artifact, ArtifactProperties.NAME),
+                getResourcePropertyViaFallBack(
+                  artifact,
+                  ARTIFACT_PROPERTY_REPOS,
+                  PIPELINE_WORKSPACE_FIELDS,
+                ),
+                getResourcePropertyViaFallBack(artifact, ARTIFACT_PROPERTY_REPOS, NAME_FIELDS),
                 artifact.getId(),
                 type,
                 artifact.getUri(),
@@ -187,23 +235,17 @@ class ArtifactList extends Page<{}, ArtifactListState> {
               ],
             } as Row;
           })
-            .filter(rowFilterFn(request))
-            .sort(rowCompareFn(request, this.state.columns))
-        );
-
-        this.setState({
-          artifacts,
-          expandedRows: collapsedAndExpandedRows.expandedRows,
-          rows: collapsedAndExpandedRows.collapsedRows,
-        });
-      } catch (err) {
-        if (err.message) {
-          this.showPageError(err.message, err);
-        } else {
-          this.showPageError('Unknown error', err);
-        }
+          .filter(rowFilterFn(request))
+          .sort(rowCompareFn(request, this.state.columns)),
+      );
+    } catch (err) {
+      if (err.message) {
+        this.showPageError(err.message, err);
+      } else {
+        this.showPageError('Unknown error', err);
       }
-    });
+    }
+    return;
   }
 
   /**
@@ -215,8 +257,10 @@ class ArtifactList extends Page<{}, ArtifactListState> {
     if (!rows[index]) {
       return;
     }
-    rows[index].expandState = rows[index].expandState === ExpandState.EXPANDED ?
-      ExpandState.COLLAPSED : ExpandState.EXPANDED;
+    rows[index].expandState =
+      rows[index].expandState === ExpandState.EXPANDED
+        ? ExpandState.COLLAPSED
+        : ExpandState.EXPANDED;
     this.setState({ rows });
   }
 

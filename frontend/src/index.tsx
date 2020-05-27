@@ -14,6 +14,11 @@
  * limitations under the License.
  */
 
+import {
+  init as initKfClient,
+  NamespaceContextProvider,
+  NamespaceContext,
+} from './lib/KubeflowClient';
 import './CSSReset';
 import * as React from 'react';
 import * as ReactDOM from 'react-dom';
@@ -21,8 +26,15 @@ import MuiThemeProvider from '@material-ui/core/styles/MuiThemeProvider';
 import Router from './components/Router';
 import { cssRule } from 'typestyle';
 import { theme, fonts } from './Css';
+import { HashRouter } from 'react-router-dom';
+import { KFP_FLAGS, Deployments } from './lib/Flags';
+import { GkeMetadataProvider } from './lib/GkeMetadata';
 
 // TODO: license headers
+
+if (KFP_FLAGS.DEPLOYMENT === Deployments.KUBEFLOW) {
+  initKfClient();
+}
 
 cssRule('html, body, #root', {
   background: 'white',
@@ -34,9 +46,22 @@ cssRule('html, body, #root', {
   width: '100%',
 });
 
-ReactDOM.render(
+const app = (
   <MuiThemeProvider theme={theme}>
-    <Router />
-  </MuiThemeProvider>,
-  document.getElementById('root')
+    <GkeMetadataProvider>
+      <HashRouter>
+        <Router />
+      </HashRouter>
+    </GkeMetadataProvider>
+  </MuiThemeProvider>
+);
+ReactDOM.render(
+  KFP_FLAGS.DEPLOYMENT === Deployments.KUBEFLOW ? (
+    <NamespaceContextProvider>{app}</NamespaceContextProvider>
+  ) : (
+    // Uncomment the following for namespace switch during development.
+    // <NamespaceContext.Provider value='your-namespace'>{app}</NamespaceContext.Provider>
+    <NamespaceContext.Provider value={undefined}>{app}</NamespaceContext.Provider>
+  ),
+  document.getElementById('root'),
 );

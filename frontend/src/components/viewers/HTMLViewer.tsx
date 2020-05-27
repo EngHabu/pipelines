@@ -64,8 +64,16 @@ class HTMLViewer extends Viewer<HTMLViewerProps, any> {
       return null;
     }
 
-    return <iframe ref={this._iframeRef} src='javascript:void(0);'
-      className={this._css.iframe} sandbox='allow-scripts' />;
+    return (
+      // TODO: fix this
+      // eslint-disable-next-line jsx-a11y/iframe-has-title
+      <iframe
+        ref={this._iframeRef}
+        src='about:blank'
+        className={this._css.iframe}
+        sandbox='allow-scripts'
+      />
+    );
   }
 }
 

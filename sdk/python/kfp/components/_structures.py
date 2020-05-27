@@ -31,6 +31,7 @@ __all__ = [
 
     'ComponentReference',
 
+    'GraphInputReference',
     'GraphInputArgument',
     'TaskOutputReference',
     'TaskOutputArgument',
@@ -45,6 +46,9 @@ __all__ = [
     'AndPredicate',
     'OrPredicate',
 
+    'RetryStrategySpec',
+    'CachingStrategySpec',
+    'ExecutionOptionsSpec',
     'TaskSpec',
 
     'GraphSpec',
@@ -306,7 +310,7 @@ class ComponentSpec(ModelBase):
                 for task in graph.tasks.values():
                     if task.arguments is not None:
                         for argument in task.arguments.values():
-                            if isinstance(argument, GraphInputArgument) and argument.input_name not in self._inputs_dict:
+                            if isinstance(argument, GraphInputArgument) and argument.graph_input.input_name not in self._inputs_dict:
                                 raise TypeError('Argument "{}" references non-existing input.'.format(argument))
 
     def save(self, file_path: str):
@@ -334,14 +338,38 @@ class ComponentReference(ModelBase):
             raise TypeError('Need at least one argument.')
 
 
-class GraphInputArgument(ModelBase):
-    '''Represents the component argument value that comes from the graph component input.'''
+class GraphInputReference(ModelBase):
+    '''References the input of the graph (the scope is a single graph).'''
     _serialized_names = {
-        'input_name': 'graphInput',
+        'input_name': 'inputName',
     }
 
     def __init__(self,
         input_name: str,
+        type: Optional[TypeSpecType] = None,    # Can be used to override the reference data type
+    ):
+        super().__init__(locals())
+
+    def as_argument(self) -> 'GraphInputArgument':
+        return GraphInputArgument(graph_input=self)
+
+    def with_type(self, type_spec: TypeSpecType) -> 'GraphInputReference':
+        return GraphInputReference(
+            input_name=self.input_name,
+            type=type_spec,
+        )
+
+    def without_type(self) -> 'GraphInputReference':
+        return self.with_type(None)
+
+class GraphInputArgument(ModelBase):
+    '''Represents the component argument value that comes from the graph component input.'''
+    _serialized_names = {
+        'graph_input': 'graphInput',
+    }
+
+    def __init__(self,
+        graph_input: GraphInputReference,
     ):
         super().__init__(locals())
 
@@ -507,6 +535,17 @@ class RetryStrategySpec(ModelBase):
         super().__init__(locals())
 
 
+class CachingStrategySpec(ModelBase):
+    _serialized_names = {
+        'max_cache_staleness': 'maxCacheStaleness',
+    }
+
+    def __init__(self,
+        max_cache_staleness: Optional[str] = None,  # RFC3339 compliant duration: P30DT1H22M3S
+    ):
+        super().__init__(locals())
+
+
 class KubernetesExecutionOptionsSpec(ModelBase):
     _serialized_names = {
         'main_container': 'mainContainer',
@@ -524,11 +563,13 @@ class KubernetesExecutionOptionsSpec(ModelBase):
 class ExecutionOptionsSpec(ModelBase):
     _serialized_names = {
         'retry_strategy': 'retryStrategy',
+        'caching_strategy': 'cachingStrategy',
         'kubernetes_options': 'kubernetesOptions',
     }
 
     def __init__(self,
         retry_strategy: Optional[RetryStrategySpec] = None,
+        caching_strategy: Optional[CachingStrategySpec] = None,
         kubernetes_options: Optional[KubernetesExecutionOptionsSpec] = None,
     ):
         super().__init__(locals())
@@ -566,6 +607,8 @@ class TaskSpec(ModelBase):
             task_outputs[output.name] = task_output_arg
 
         self.outputs = task_outputs
+        if len(task_outputs) == 1:
+            self.output = list(task_outputs.values())[0]
 
 
 class GraphSpec(ModelBase):

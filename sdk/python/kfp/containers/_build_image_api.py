@@ -13,6 +13,7 @@
 
 __all__ = [
     'build_image_from_working_dir',
+    'default_image_builder',
 ]
 
 
@@ -25,6 +26,7 @@ import tempfile
 
 import requests
 
+from ._cache import calculate_recursive_dir_hash, try_read_value_from_cache, write_value_to_cache
 from ._container_builder import ContainerBuilder
 
 
@@ -34,14 +36,7 @@ default_base_image = 'gcr.io/deeplearning-platform-release/tf-cpu.1-14'
 _container_work_dir = '/python_env'
 
 
-_default_image_builder = None
-
-
-def _get_default_image_builder():
-    global _default_image_builder
-    if _default_image_builder is None:
-        _default_image_builder = ContainerBuilder()
-    return _default_image_builder
+default_image_builder = ContainerBuilder()
 
 
 def _generate_dockerfile_text(context_dir: str, dockerfile_path: str, base_image: str = None) -> str:
@@ -85,6 +80,13 @@ def build_image_from_working_dir(image_name: str = None, working_dir: str = None
         timeout: Optional. The image building timeout in seconds.
         base_image: Optional. The container image to use as the base for the new image. If not set, the Google Deep Learning Tensorflow CPU image will be used.
         builder: Optional. An instance of ContainerBuilder or compatible class that will be used to build the image.
+          The default builder uses "kubeflow-pipelines-container-builder" service account in "kubeflow" namespace. It works with Kubeflow Pipelines clusters installed in "kubeflow" namespace using Google Cloud Marketplace or Standalone with version > 0.4.0.
+          If your Kubeflow Pipelines is installed in a different namespace, you should use ContainerBuilder(namespace='<your-kfp-namespace>', ...).
+          Depending on how you installed Kubeflow Pipelines, you need to configure your ContainerBuilder instance's namespace and service_account:
+          For clusters installed with Kubeflow >= 0.7, use ContainerBuidler(namespace='<your-user-namespace>', service_account='default-editor', ...). You can omit the namespace if you use kfp sdk from in-cluster notebook, it uses notebook namespace by default.
+          For clusters installed with Kubeflow < 0.7, use ContainerBuilder(service_account='default', ...).
+          For clusters installed using Google Cloud Marketplace or Standalone with version <= 0.4.0, use ContainerBuilder(namespace='<your-kfp-namespace>' service_account='default')
+          You may refer to https://www.kubeflow.org/docs/pipelines/installation/overview/ for more details about different installation options.
 
     Returns:
         The full name of the container image including the hash digest. E.g. gcr.io/my-org/my-image@sha256:86c1...793c.
@@ -113,11 +115,20 @@ def build_image_from_working_dir(image_name: str = None, working_dir: str = None
             dockerfile_text = _generate_dockerfile_text(context_dir, dst_dockerfile_path, base_image)
             with open(dst_dockerfile_path, 'w') as f:
                 f.write(dockerfile_text)
+        
+        cache_name = 'build_image_from_working_dir'
+        cache_key = calculate_recursive_dir_hash(context_dir)
+        cached_image_name = try_read_value_from_cache(cache_name, cache_key)
+        if cached_image_name:
+            return cached_image_name
 
         if builder is None:
-            builder = _get_default_image_builder()
-        return builder.build(
+            builder = default_image_builder
+        image_name = builder.build(
             local_dir=context_dir,
             target_image=image_name,
             timeout=timeout,
         )
+        if image_name:
+            write_value_to_cache(cache_name, cache_key, image_name)
+        return image_name

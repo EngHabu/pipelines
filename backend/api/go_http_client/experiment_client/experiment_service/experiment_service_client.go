@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,7 +39,36 @@ type Client struct {
 }
 
 /*
-CreateExperiment create experiment API
+ArchiveExperiment archives an experiment
+*/
+func (a *Client) ArchiveExperiment(params *ArchiveExperimentParams, authInfo runtime.ClientAuthInfoWriter) (*ArchiveExperimentOK, error) {
+	// TODO: Validate the params before sending
+	if params == nil {
+		params = NewArchiveExperimentParams()
+	}
+
+	result, err := a.transport.Submit(&runtime.ClientOperation{
+		ID:                 "ArchiveExperiment",
+		Method:             "POST",
+		PathPattern:        "/apis/v1beta1/experiments/{id}:archive",
+		ProducesMediaTypes: []string{"application/json"},
+		ConsumesMediaTypes: []string{"application/json"},
+		Schemes:            []string{"http", "https"},
+		Params:             params,
+		Reader:             &ArchiveExperimentReader{formats: a.formats},
+		AuthInfo:           authInfo,
+		Context:            params.Context,
+		Client:             params.HTTPClient,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.(*ArchiveExperimentOK), nil
+
+}
+
+/*
+CreateExperiment creates a new experiment
 */
 func (a *Client) CreateExperiment(params *CreateExperimentParams, authInfo runtime.ClientAuthInfoWriter) (*CreateExperimentOK, error) {
 	// TODO: Validate the params before sending
@@ -68,7 +97,7 @@ func (a *Client) CreateExperiment(params *CreateExperimentParams, authInfo runti
 }
 
 /*
-DeleteExperiment delete experiment API
+DeleteExperiment deletes an experiment
 */
 func (a *Client) DeleteExperiment(params *DeleteExperimentParams, authInfo runtime.ClientAuthInfoWriter) (*DeleteExperimentOK, error) {
 	// TODO: Validate the params before sending
@@ -97,7 +126,7 @@ func (a *Client) DeleteExperiment(params *DeleteExperimentParams, authInfo runti
 }
 
 /*
-GetExperiment get experiment API
+GetExperiment finds a specific experiment by ID
 */
 func (a *Client) GetExperiment(params *GetExperimentParams, authInfo runtime.ClientAuthInfoWriter) (*GetExperimentOK, error) {
 	// TODO: Validate the params before sending
@@ -126,7 +155,7 @@ func (a *Client) GetExperiment(params *GetExperimentParams, authInfo runtime.Cli
 }
 
 /*
-ListExperiment list experiment API
+ListExperiment finds all experiments
 */
 func (a *Client) ListExperiment(params *ListExperimentParams, authInfo runtime.ClientAuthInfoWriter) (*ListExperimentOK, error) {
 	// TODO: Validate the params before sending
@@ -151,6 +180,35 @@ func (a *Client) ListExperiment(params *ListExperimentParams, authInfo runtime.C
 		return nil, err
 	}
 	return result.(*ListExperimentOK), nil
+
+}
+
+/*
+UnarchiveExperiment restores an archived experiment
+*/
+func (a *Client) UnarchiveExperiment(params *UnarchiveExperimentParams, authInfo runtime.ClientAuthInfoWriter) (*UnarchiveExperimentOK, error) {
+	// TODO: Validate the params before sending
+	if params == nil {
+		params = NewUnarchiveExperimentParams()
+	}
+
+	result, err := a.transport.Submit(&runtime.ClientOperation{
+		ID:                 "UnarchiveExperiment",
+		Method:             "POST",
+		PathPattern:        "/apis/v1beta1/experiments/{id}:unarchive",
+		ProducesMediaTypes: []string{"application/json"},
+		ConsumesMediaTypes: []string{"application/json"},
+		Schemes:            []string{"http", "https"},
+		Params:             params,
+		Reader:             &UnarchiveExperimentReader{formats: a.formats},
+		AuthInfo:           authInfo,
+		Context:            params.Context,
+		Client:             params.HTTPClient,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.(*UnarchiveExperimentOK), nil
 
 }
 

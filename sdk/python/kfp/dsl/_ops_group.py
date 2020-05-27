@@ -93,6 +93,11 @@ class OpsGroup(object):
     self.dependencies.append(dependency)
     return self
 
+  def remove_op_recursive(self, op):
+    if self.ops and op in self.ops:
+      self.ops.remove(op)
+    for sub_group in self.groups or []:
+      sub_group.remove_op_recursive(op)
 
 class ExitHandler(OpsGroup):
   """Represents an exit handler that is invoked upon exiting a group of ops.
@@ -118,6 +123,12 @@ class ExitHandler(OpsGroup):
     if exit_op.dependent_names:
       raise ValueError('exit_op cannot depend on any other ops.')
 
+    # Removing exit_op form any group
+    _pipeline.Pipeline.get_default_pipeline().remove_op_from_groups(exit_op)
+
+    # Setting is_exit_handler since the compiler might be using this attribute. TODO: Check that it's needed
+    exit_op.is_exit_handler = True
+
     self.exit_op = exit_op
 
 
@@ -126,18 +137,19 @@ class Condition(OpsGroup):
 
   Example usage:
   ```python
-  with Condition(param1=='pizza'):
+  with Condition(param1=='pizza', '[param1 is pizza]'):
     op1 = ContainerOp(...)
     op2 = ContainerOp(...)
   ```
   """
 
-  def __init__(self, condition):
+  def __init__(self, condition, name = None):
     """Create a new instance of Condition.
     Args:
       condition (ConditionOperator): the condition.
+      name (str): name of the condition
     """
-    super(Condition, self).__init__('condition')
+    super(Condition, self).__init__('condition', name)
     self.condition = condition
 
 

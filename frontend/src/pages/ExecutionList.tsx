@@ -14,18 +14,36 @@
  * limitations under the License.
  */
 
+import {
+  Api,
+  Execution,
+  ExecutionType,
+  GetExecutionsRequest,
+  GetExecutionTypesRequest,
+  ListRequest,
+} from '@kubeflow/frontend';
 import * as React from 'react';
-import CustomTable, { Column, Row, ExpandState, CustomRendererProps } from '../components/CustomTable';
+import { Link } from 'react-router-dom';
+import { classes } from 'typestyle';
+import CustomTable, {
+  Column,
+  Row,
+  ExpandState,
+  CustomRendererProps,
+} from '../components/CustomTable';
 import { Page } from './Page';
 import { ToolbarProps } from '../components/Toolbar';
-import { classes } from 'typestyle';
 import { commonCss, padding } from '../Css';
-import { getResourceProperty, rowCompareFn, rowFilterFn, groupRows, getExpandedRow, serviceErrorToString } from '../lib/Utils';
-import { Link } from 'react-router-dom';
-import { RoutePage, RouteParams } from '../components/Router';
-import { Execution, ExecutionType } from '../generated/src/apis/metadata/metadata_store_pb';
-import { ListRequest, ExecutionProperties, ExecutionCustomProperties, Apis } from '../lib/Apis';
-import { GetExecutionsRequest, GetExecutionTypesRequest } from '../generated/src/apis/metadata/metadata_store_service_pb';
+import {
+  rowCompareFn,
+  rowFilterFn,
+  groupRows,
+  getExpandedRow,
+  CollapsedAndExpandedRows,
+  serviceErrorToString,
+} from '../lib/Utils';
+import { RoutePageFactory } from '../components/Router';
+import { ExecutionHelpers } from 'src/lib/MlmdUtils';
 
 interface ExecutionListState {
   executions: Execution[];
@@ -36,6 +54,8 @@ interface ExecutionListState {
 
 class ExecutionList extends Page<{}, ExecutionListState> {
   private tableRef = React.createRef<CustomTable>();
+  private api = Api.getInstance();
+  private executionTypesMap: Map<number, ExecutionType>;
 
   constructor(props: any) {
     super(props);
@@ -44,8 +64,8 @@ class ExecutionList extends Page<{}, ExecutionListState> {
         {
           customRenderer: this.nameCustomRenderer,
           flex: 2,
-          label: 'Pipeline/Workspace',
-          sortKey: 'pipelineName'
+          label: 'Run ID/Workspace/Pipeline',
+          sortKey: 'workspace',
         },
         {
           customRenderer: this.nameCustomRenderer,
@@ -53,7 +73,7 @@ class ExecutionList extends Page<{}, ExecutionListState> {
           label: 'Name',
           sortKey: 'name',
         },
-        { label: 'State', flex: 1, sortKey: 'state', },
+        { label: 'State', flex: 1, sortKey: 'state' },
         { label: 'ID', flex: 1, sortKey: 'id' },
         { label: 'Type', flex: 2, sortKey: 'type' },
       ],
@@ -78,7 +98,8 @@ class ExecutionList extends Page<{}, ExecutionListState> {
     const { rows, columns } = this.state;
     return (
       <div className={classes(commonCss.page, padding(20, 'lr'))}>
-        <CustomTable ref={this.tableRef}
+        <CustomTable
+          ref={this.tableRef}
           columns={columns}
           rows={rows}
           disablePaging={true}
@@ -88,7 +109,8 @@ class ExecutionList extends Page<{}, ExecutionListState> {
           initialSortOrder='asc'
           getExpandComponent={this.getExpandedExecutionsRow}
           toggleExpansion={this.toggleRowExpand}
-          emptyMessage='No executions found.' />
+          emptyMessage='No executions found.'
+        />
       </div>
     );
   }
@@ -100,84 +122,108 @@ class ExecutionList extends Page<{}, ExecutionListState> {
   }
 
   private async reload(request: ListRequest): Promise<string> {
-    Apis.getMetadataServiceClient().getExecutions(new GetExecutionsRequest(), (err, res) => {
-      // Code === 5 means no record found in backend. This is a temporary workaround.
-      // TODO: remove err.code !== 5 check when backend is fixed.
-      if (err && err.code !== 5) {
-        this.showPageError(serviceErrorToString(err));
-        return;
+    try {
+      // TODO: Consider making an Api method for returning and caching types
+      if (!this.executionTypesMap || !this.executionTypesMap.size) {
+        this.executionTypesMap = await this.getExecutionTypes();
       }
-
-      const executions = (res && res.getExecutionsList()) || [];
-      this.getRowsFromExecutions(request, executions);
-      this.clearBanner();
-    });
+      if (!this.state.executions.length) {
+        const executions = await this.getExecutions();
+        this.setState({ executions });
+        this.clearBanner();
+        const collapsedAndExpandedRows = this.getRowsFromExecutions(request, executions);
+        this.setState({
+          expandedRows: collapsedAndExpandedRows.expandedRows,
+          rows: collapsedAndExpandedRows.collapsedRows,
+        });
+      }
+    } catch (err) {
+      this.showPageError(serviceErrorToString(err));
+    }
     return '';
   }
 
-  private nameCustomRenderer: React.FC<CustomRendererProps<string>> =
-    (props: CustomRendererProps<string>) => {
-      const [executionType, executionId] = props.id.split(':');
-      const link = RoutePage.EXECUTION_DETAILS
-        .replace(`:${RouteParams.EXECUTION_TYPE}+`, executionType)
-        .replace(`:${RouteParams.ID}`, executionId);
-      return (
-        <Link onClick={(e) => e.stopPropagation()}
-          className={commonCss.link}
-          to={link}>
-          {props.value}
-        </Link>
+  private async getExecutions(): Promise<Execution[]> {
+    try {
+      const response = await this.api.metadataStoreService.getExecutions(
+        new GetExecutionsRequest(),
       );
+      return response.getExecutionsList();
+    } catch (err) {
+      // Code === 5 means no record found in backend. This is a temporary workaround.
+      // TODO: remove err.code !== 5 check when backend is fixed.
+      if (err.code !== 5) {
+        err.message = 'Failed getting executions: ' + err.message;
+        throw err;
+      }
     }
+    return [];
+  }
+
+  private async getExecutionTypes(): Promise<Map<number, ExecutionType>> {
+    try {
+      const response = await this.api.metadataStoreService.getExecutionTypes(
+        new GetExecutionTypesRequest(),
+      );
+
+      const executionTypesMap = new Map<number, ExecutionType>();
+
+      response.getExecutionTypesList().forEach(executionType => {
+        executionTypesMap.set(executionType.getId(), executionType);
+      });
+
+      return executionTypesMap;
+    } catch (err) {
+      this.showPageError(serviceErrorToString(err));
+    }
+    return new Map();
+  }
+
+  private nameCustomRenderer: React.FC<CustomRendererProps<string>> = (
+    props: CustomRendererProps<string>,
+  ) => {
+    return (
+      <Link
+        onClick={e => e.stopPropagation()}
+        className={commonCss.link}
+        to={RoutePageFactory.executionDetails(Number(props.id))}
+      >
+        {props.value}
+      </Link>
+    );
+  };
 
   /**
    * Temporary solution to apply sorting, filtering, and pagination to the
    * local list of executions until server-side handling is available
    * TODO: Replace once https://github.com/kubeflow/metadata/issues/73 is done.
    * @param request
+   * @param executions
    */
-  private getRowsFromExecutions(request: ListRequest, executions: Execution[]): void {
-    const executionTypesMap = new Map<number, ExecutionType>();
-    // TODO: Consider making an Api method for returning and caching types
-    Apis.getMetadataServiceClient().getExecutionTypes(new GetExecutionTypesRequest(), (err, res) => {
-      if (err) {
-        this.showPageError(serviceErrorToString(err));
-        return;
-      }
-
-      (res && res.getExecutionTypesList() || []).forEach((executionType) => {
-        executionTypesMap.set(executionType.getId()!, executionType);
-      });
-
-      const collapsedAndExpandedRows =
-        groupRows(executions
-          .map((execution) => { // Flattens
-            const typeId = execution.getTypeId();
-            const type = (typeId && executionTypesMap && executionTypesMap.get(typeId))
-              ? executionTypesMap.get(typeId)!.getName()
-              : typeId;
-            return {
-              id: `${type}:${execution.getId()}`, // Join with colon so we can build the link
-              otherFields: [
-                getResourceProperty(execution, ExecutionProperties.PIPELINE_NAME)
-                || getResourceProperty(execution, ExecutionCustomProperties.WORKSPACE, true),
-                getResourceProperty(execution, ExecutionProperties.COMPONENT_ID),
-                getResourceProperty(execution, ExecutionProperties.STATE),
-                execution.getId(),
-                type,
-              ],
-            };
-          })
-          .filter(rowFilterFn(request))
-          .sort(rowCompareFn(request, this.state.columns))
-        );
-
-      this.setState({
-        executions,
-        expandedRows: collapsedAndExpandedRows.expandedRows,
-        rows: collapsedAndExpandedRows.collapsedRows,
-      });
-    });
+  private getRowsFromExecutions(
+    request: ListRequest,
+    executions: Execution[],
+  ): CollapsedAndExpandedRows {
+    return groupRows(
+      executions
+        .map(execution => {
+          // Flattens
+          const executionType = this.executionTypesMap!.get(execution.getTypeId());
+          const type = executionType ? executionType.getName() : execution.getTypeId();
+          return {
+            id: `${execution.getId()}`,
+            otherFields: [
+              ExecutionHelpers.getWorkspace(execution),
+              ExecutionHelpers.getName(execution),
+              ExecutionHelpers.getState(execution),
+              execution.getId(),
+              type,
+            ],
+          };
+        })
+        .filter(rowFilterFn(request))
+        .sort(rowCompareFn(request, this.state.columns)),
+    );
   }
 
   /**
@@ -189,9 +235,10 @@ class ExecutionList extends Page<{}, ExecutionListState> {
     if (!rows[index]) {
       return;
     }
-    rows[index].expandState = rows[index].expandState === ExpandState.EXPANDED
-      ? ExpandState.COLLAPSED
-      : ExpandState.EXPANDED;
+    rows[index].expandState =
+      rows[index].expandState === ExpandState.EXPANDED
+        ? ExpandState.COLLAPSED
+        : ExpandState.EXPANDED;
     this.setState({ rows });
   }
 

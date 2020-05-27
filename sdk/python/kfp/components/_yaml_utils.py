@@ -41,6 +41,7 @@ def dump_yaml(data):
                 yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
                 data.items())
         OrderedDumper.add_representer(OrderedDict, _dict_representer)
+        OrderedDumper.add_representer(dict, _dict_representer)
 
         #Hack to force the code (multi-line string) to be output using the '|' style.
         def represent_str_or_text(self, data):
@@ -48,9 +49,11 @@ def dump_yaml(data):
             if data.find('\n') >= 0: #Multiple lines
                 #print('Switching style for multiline text:' + data)
                 style = '|'
+            if data.lower() in ['y', 'n', 'yes', 'no', 'true', 'false', 'on', 'off']:
+                style = '"'
             return self.represent_scalar(u'tag:yaml.org,2002:str', data, style)
-    
-        OrderedDumper.add_representer(str, represent_str_or_text)   
-        
+
+        OrderedDumper.add_representer(str, represent_str_or_text)
+
         return yaml.dump(data, stream, OrderedDumper, **kwds)
-    return ordered_dump(data)
+    return ordered_dump(data, default_flow_style=None)

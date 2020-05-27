@@ -26,15 +26,16 @@ import RecurringRunsManager from './RecurringRunsManager';
 import RunList from '../pages/RunList';
 import Toolbar, { ToolbarProps } from '../components/Toolbar';
 import Tooltip from '@material-ui/core/Tooltip';
-import { ApiExperiment } from '../apis/experiment';
-import { ApiResourceType } from '../apis/job';
+import { ApiExperiment, ExperimentStorageState } from '../apis/experiment';
 import { Apis } from '../lib/Apis';
-import { Page } from './Page';
+import { Page, PageProps } from './Page';
 import { RoutePage, RouteParams } from '../components/Router';
 import { RunStorageState } from '../apis/run';
 import { classes, stylesheet } from 'typestyle';
 import { color, commonCss, padding } from '../Css';
 import { logger } from '../lib/Utils';
+import { useNamespaceChangeEvent } from 'src/lib/KubeflowClient';
+import { Redirect } from 'react-router-dom';
 
 const css = stylesheet({
   card: {
@@ -107,8 +108,7 @@ interface ExperimentDetailsState {
   runListToolbarProps: ToolbarProps;
 }
 
-class ExperimentDetails extends Page<{}, ExperimentDetailsState> {
-
+export class ExperimentDetails extends Page<{}, ExperimentDetailsState> {
   private _runlistRef = React.createRef<RunList>();
 
   constructor(props: any) {
@@ -126,6 +126,7 @@ class ExperimentDetails extends Page<{}, ExperimentDetailsState> {
           .compareRuns(() => this.state.selectedIds)
           .cloneRun(() => this.state.selectedIds, false)
           .archive(
+            'run',
             () => this.state.selectedIds,
             false,
             ids => this._selectionChanged(ids),
@@ -153,64 +154,107 @@ class ExperimentDetails extends Page<{}, ExperimentDetailsState> {
 
   public render(): JSX.Element {
     const { activeRecurringRunsCount, experiment } = this.state;
-    const description = experiment ? (experiment.description || '') : '';
+    const description = experiment ? experiment.description || '' : '';
 
     return (
       <div className={classes(commonCss.page, padding(20, 'lrt'))}>
-
         {experiment && (
           <div className={commonCss.page}>
             <div className={css.cardRow}>
-              <Paper id='recurringRunsCard' className={classes(
-                css.card,
-                css.recurringRunsCard,
-                !!activeRecurringRunsCount && css.cardActive
-              )} elevation={0}>
+              <Paper
+                id='recurringRunsCard'
+                className={classes(
+                  css.card,
+                  css.recurringRunsCard,
+                  !!activeRecurringRunsCount && css.cardActive,
+                )}
+                elevation={0}
+              >
                 <div>
                   <div className={css.cardTitle}>Recurring run configs</div>
-                  <div className={classes(css.cardContent, !!activeRecurringRunsCount && css.recurringRunsActive)}>
+                  <div
+                    className={classes(
+                      css.cardContent,
+                      !!activeRecurringRunsCount && css.recurringRunsActive,
+                    )}
+                  >
                     {activeRecurringRunsCount + ' active'}
                   </div>
-                  <Button className={css.cardBtn} id='manageExperimentRecurringRunsBtn' disableRipple={true}
-                    onClick={() => this.setState({ recurringRunsManagerOpen: true })}>
+                  <Button
+                    className={css.cardBtn}
+                    id='manageExperimentRecurringRunsBtn'
+                    disableRipple={true}
+                    onClick={() => this.setState({ recurringRunsManagerOpen: true })}
+                  >
                     Manage
                   </Button>
                 </div>
               </Paper>
-              <Paper id='experimentDescriptionCard' className={classes(css.card, css.runStatsCard)} elevation={0}>
+              <Paper
+                id='experimentDescriptionCard'
+                className={classes(css.card, css.runStatsCard)}
+                elevation={0}
+              >
                 <div className={css.cardTitle}>
                   <span>Experiment description</span>
-                  <Button id='expandExperimentDescriptionBtn' onClick={() => this.props.updateDialog({ title: 'Experiment description', content: description })}
-                    className={classes(css.popOutIcon, 'popOutButton')}>
+                  <Button
+                    id='expandExperimentDescriptionBtn'
+                    onClick={() =>
+                      this.props.updateDialog({
+                        content: description,
+                        title: 'Experiment description',
+                      })
+                    }
+                    className={classes(css.popOutIcon, 'popOutButton')}
+                  >
                     <Tooltip title='Read more'>
                       <PopOutIcon style={{ fontSize: 18 }} />
                     </Tooltip>
                   </Button>
                 </div>
-                {description.split('\n').slice(0, 2).map((line, i) =>
-                  <div key={i} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {line}
-                  </div>)
-                }
+                {description
+                  .split('\n')
+                  .slice(0, 2)
+                  .map((line, i) => (
+                    <div
+                      key={i}
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {line}
+                    </div>
+                  ))}
                 {description.split('\n').length > 2 ? '...' : ''}
               </Paper>
             </div>
             <Toolbar {...this.state.runListToolbarProps} />
-            <RunList onError={this.showPageError.bind(this)}
-              hideExperimentColumn={true} experimentIdMask={experiment.id} ref={this._runlistRef}
-              selectedIds={this.state.selectedIds} storageState={RunStorageState.AVAILABLE}
-              onSelectionChange={this._selectionChanged.bind(this)} {...this.props} />
+            <RunList
+              onError={this.showPageError.bind(this)}
+              hideExperimentColumn={true}
+              experimentIdMask={experiment.id}
+              ref={this._runlistRef}
+              selectedIds={this.state.selectedIds}
+              storageState={RunStorageState.AVAILABLE}
+              onSelectionChange={this._selectionChanged.bind(this)}
+              {...this.props}
+            />
 
-            <Dialog open={this.state.recurringRunsManagerOpen} classes={{ paper: css.recurringRunsDialog }}
-              onClose={this._recurringRunsManagerClosed.bind(this)}>
+            <Dialog
+              open={this.state.recurringRunsManagerOpen}
+              classes={{ paper: css.recurringRunsDialog }}
+              onClose={this._recurringRunsManagerClosed.bind(this)}
+            >
               <DialogContent>
-                <RecurringRunsManager {...this.props}
-                  experimentId={this.props.match.params[RouteParams.experimentId]} />
+                <RecurringRunsManager
+                  {...this.props}
+                  experimentId={this.props.match.params[RouteParams.experimentId]}
+                />
               </DialogContent>
               <DialogActions>
-                <Button id='closeExperimentRecurringRunManagerBtn'
+                <Button
+                  id='closeExperimentRecurringRunManagerBtn'
                   onClick={this._recurringRunsManagerClosed.bind(this)}
-                  color='secondary'>
+                  color='secondary'
+                >
                   Close
                 </Button>
               </DialogActions>
@@ -242,8 +286,19 @@ class ExperimentDetails extends Page<{}, ExperimentDetailsState> {
       const experiment = await Apis.experimentServiceApi.getExperiment(experimentId);
       const pageTitle = experiment.name || this.props.match.params[RouteParams.experimentId];
 
+      // Update the Archive/Restore button based on the storage state of this experiment.
+      const buttons = new Buttons(
+        this.props,
+        this.refresh.bind(this),
+        this.getInitialToolbarState().actions,
+      );
+      const idGetter = () => (experiment.id ? [experiment.id] : []);
+      experiment.storage_state === ExperimentStorageState.ARCHIVED
+        ? buttons.restore('experiment', idGetter, true, () => this.refresh())
+        : buttons.archive('experiment', idGetter, true, () => this.refresh());
+      const actions = buttons.getToolbarActionMap();
       this.props.updateToolbar({
-        actions: this.props.toolbarProps.actions,
+        actions,
         breadcrumbs: [{ displayName: 'Experiments', href: RoutePage.EXPERIMENTS }],
         pageTitle,
         pageTitleTooltip: pageTitle,
@@ -258,20 +313,20 @@ class ExperimentDetails extends Page<{}, ExperimentDetailsState> {
           undefined,
           100,
           '',
-          ApiResourceType.EXPERIMENT.toString(),
+          'EXPERIMENT',
           experimentId,
         );
-        activeRecurringRunsCount =
-          (recurringRuns.jobs || []).filter(j => j.enabled === true).length;
-
+        activeRecurringRunsCount = (recurringRuns.jobs || []).filter(j => j.enabled === true)
+          .length;
       } catch (err) {
         await this.showPageError(
-          `Error: failed to retrieve recurring runs for experiment: ${experimentId}.`, err);
+          `Error: failed to retrieve recurring runs for experiment: ${experimentId}.`,
+          err,
+        );
         logger.error(`Error fetching recurring runs for experiment: ${experimentId}`, err);
       }
 
       this.setStateSafe({ activeRecurringRunsCount, experiment });
-
     } catch (err) {
       await this.showPageError(`Error: failed to retrieve experiment: ${experimentId}.`, err);
       logger.error(`Error loading experiment: ${experimentId}`, err);
@@ -280,7 +335,8 @@ class ExperimentDetails extends Page<{}, ExperimentDetailsState> {
 
   private _selectionChanged(selectedIds: string[]): void {
     const toolbarActions = this.state.runListToolbarProps.actions;
-    toolbarActions[ButtonKeys.COMPARE].disabled = selectedIds.length <= 1 || selectedIds.length > 10;
+    toolbarActions[ButtonKeys.COMPARE].disabled =
+      selectedIds.length <= 1 || selectedIds.length > 10;
     toolbarActions[ButtonKeys.CLONE_RUN].disabled = selectedIds.length !== 1;
     toolbarActions[ButtonKeys.ARCHIVE].disabled = !selectedIds.length;
     this.setState({
@@ -301,4 +357,15 @@ class ExperimentDetails extends Page<{}, ExperimentDetailsState> {
   }
 }
 
-export default ExperimentDetails;
+const EnhancedExperimentDetails: React.FC<PageProps> = props => {
+  // When namespace changes, this experiment no longer belongs to new namespace.
+  // So we redirect to experiment list page instead.
+  const namespaceChanged = useNamespaceChangeEvent();
+  if (namespaceChanged) {
+    return <Redirect to={RoutePage.EXPERIMENTS} />;
+  }
+
+  return <ExperimentDetails {...props} />;
+};
+
+export default EnhancedExperimentDetails;

@@ -17,18 +17,18 @@
 import * as React from 'react';
 import Buttons, { ButtonKeys } from '../lib/Buttons';
 import RunList from './RunList';
-import { Page } from './Page';
+import { Page, PageProps } from './Page';
 import { RunStorageState } from '../apis/run';
 import { ToolbarProps } from '../components/Toolbar';
 import { classes } from 'typestyle';
 import { commonCss, padding } from '../Css';
+import { NamespaceContext } from 'src/lib/KubeflowClient';
 
 interface AllRunsListState {
   selectedIds: string[];
 }
 
-class AllRunsList extends Page<{}, AllRunsListState> {
-
+export class AllRunsList extends Page<{ namespace?: string }, AllRunsListState> {
   private _runlistRef = React.createRef<RunList>();
 
   constructor(props: any) {
@@ -48,10 +48,11 @@ class AllRunsList extends Page<{}, AllRunsListState> {
         .compareRuns(() => this.state.selectedIds)
         .cloneRun(() => this.state.selectedIds, false)
         .archive(
-            () => this.state.selectedIds,
-            false,
-            selectedIds => this._selectionChanged(selectedIds),
-          )
+          'run',
+          () => this.state.selectedIds,
+          false,
+          selectedIds => this._selectionChanged(selectedIds),
+        )
         .refresh(this.refresh.bind(this))
         .getToolbarActionMap(),
       breadcrumbs: [],
@@ -60,11 +61,20 @@ class AllRunsList extends Page<{}, AllRunsListState> {
   }
 
   public render(): JSX.Element {
-    return <div className={classes(commonCss.page, padding(20, 'lr'))}>
-      <RunList onError={this.showPageError.bind(this)} selectedIds={this.state.selectedIds}
-        onSelectionChange={this._selectionChanged.bind(this)} ref={this._runlistRef}
-        storageState={RunStorageState.AVAILABLE} {...this.props} />
-    </div>;
+    return (
+      <div className={classes(commonCss.page, padding(20, 'lr'))}>
+        <RunList
+          onError={this.showPageError.bind(this)}
+          selectedIds={this.state.selectedIds}
+          onSelectionChange={this._selectionChanged.bind(this)}
+          ref={this._runlistRef}
+          storageState={RunStorageState.AVAILABLE}
+          hideMetricMetadata={true}
+          namespaceMask={this.props.namespace}
+          {...this.props}
+        />
+      </div>
+    );
   }
 
   public async refresh(): Promise<void> {
@@ -77,12 +87,21 @@ class AllRunsList extends Page<{}, AllRunsListState> {
 
   private _selectionChanged(selectedIds: string[]): void {
     const toolbarActions = this.props.toolbarProps.actions;
-    toolbarActions[ButtonKeys.COMPARE].disabled = selectedIds.length <= 1 || selectedIds.length > 10;
+    toolbarActions[ButtonKeys.COMPARE].disabled =
+      selectedIds.length <= 1 || selectedIds.length > 10;
     toolbarActions[ButtonKeys.CLONE_RUN].disabled = selectedIds.length !== 1;
     toolbarActions[ButtonKeys.ARCHIVE].disabled = !selectedIds.length;
-    this.props.updateToolbar({ breadcrumbs: this.props.toolbarProps.breadcrumbs, actions: toolbarActions });
+    this.props.updateToolbar({
+      actions: toolbarActions,
+      breadcrumbs: this.props.toolbarProps.breadcrumbs,
+    });
     this.setState({ selectedIds });
   }
 }
 
-export default AllRunsList;
+const EnhancedAllRunsList = (props: PageProps) => {
+  const namespace = React.useContext(NamespaceContext);
+  return <AllRunsList key={namespace} {...props} namespace={namespace} />;
+};
+
+export default EnhancedAllRunsList;

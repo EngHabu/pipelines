@@ -6,14 +6,21 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
-	api "github.com/kubeflow/pipelines/backend/api/go_client"
-	"github.com/kubeflow/pipelines/backend/src/apiserver/resource"
-	"github.com/kubeflow/pipelines/backend/src/common/util"
 	"io"
 	"io/ioutil"
 	"net/url"
+	"strconv"
 	"strings"
+
+	"github.com/golang/glog"
+	api "github.com/kubeflow/pipelines/backend/api/go_client"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/resource"
+	"github.com/kubeflow/pipelines/backend/src/common/util"
+	"github.com/pkg/errors"
+	"google.golang.org/grpc/metadata"
 )
 
 // These are valid conditions of a ScheduledWorkflow.
@@ -238,5 +245,147 @@ func ValidatePipelineSpec(resourceManager *resource.ResourceManager, spec *api.P
 	if len(paramsBytes) > util.MaxParameterBytes {
 		return util.NewInvalidInputError("The input parameter length exceed maximum size of %v.", util.MaxParameterBytes)
 	}
+	return nil
+}
+
+// Verify that
+// (1) a pipeline version is specified in references as a creator.
+// (2) the above pipeline version does exists in pipeline version store and is
+// in ready status.
+func CheckPipelineVersionReference(resourceManager *resource.ResourceManager, references []*api.ResourceReference) (*string, error) {
+	if references == nil {
+		return nil, util.NewInvalidInputError("Please specify a pipeline version in Run's resource references")
+	}
+
+	var pipelineVersionId = ""
+	for _, reference := range references {
+		if reference.Key.Type == api.ResourceType_PIPELINE_VERSION && reference.Relationship == api.Relationship_CREATOR {
+			pipelineVersionId = reference.Key.Id
+		}
+	}
+	if len(pipelineVersionId) == 0 {
+		return nil, util.NewInvalidInputError("Please specify a pipeline version in Run's resource references")
+	}
+
+	// Verify pipeline version exists
+	if _, err := resourceManager.GetPipelineVersion(pipelineVersionId); err != nil {
+		return nil, util.Wrap(err, "Please specify a  valid pipeline version in Run's resource references.")
+	}
+
+	return &pipelineVersionId, nil
+}
+
+func getUserIdentity(ctx context.Context) (string, error) {
+	if ctx == nil {
+		return "", util.NewBadRequestError(errors.New("Request error: context is nil"), "Request error: context is nil.")
+	}
+	md, _ := metadata.FromIncomingContext(ctx)
+	// If the request header contains the user identity, requests are authorized
+	// based on the namespace field in the request.
+	if userIdentityHeader, ok := md[common.GetKubeflowUserIDHeader()]; ok {
+		if len(userIdentityHeader) != 1 {
+			return "", util.NewBadRequestError(errors.New("Request header error: unexpected number of user identity header. Expect 1 got "+strconv.Itoa(len(userIdentityHeader))),
+				"Request header error: unexpected number of user identity header. Expect 1 got "+strconv.Itoa(len(userIdentityHeader)))
+		}
+		userIdentityHeaderFields := strings.Split(userIdentityHeader[0], ":")
+		if len(userIdentityHeaderFields) != 2 {
+			return "", util.NewBadRequestError(errors.New("Request header error: user identity value is incorrectly formatted"),
+				"Request header error: user identity value is incorrectly formatted")
+		}
+		return userIdentityHeaderFields[1], nil
+	}
+	return "", util.NewBadRequestError(errors.New("Request header error: there is no user identity header."), "Request header error: there is no user identity header.")
+}
+
+func CanAccessExperiment(resourceManager *resource.ResourceManager, ctx context.Context, experimentID string) error {
+	if common.IsMultiUserMode() == false {
+		// Skip authz if not multi-user mode.
+		return nil
+	}
+
+	experiment, err := resourceManager.GetExperiment(experimentID)
+	if err != nil {
+		return util.NewBadRequestError(errors.New("Invalid experiment ID"), "Failed to get experiment.")
+	}
+	if len(experiment.Namespace) == 0 {
+		return util.NewInternalServerError(errors.New("Missing namespace"), "Experiment %v doesn't have a namespace.", experiment.Name)
+	}
+	err = isAuthorized(resourceManager, ctx, experiment.Namespace)
+	if err != nil {
+		return util.Wrap(err, "Failed to authorize with API resource references")
+	}
+	return nil
+}
+
+func CanAccessExperimentInResourceReferences(resourceManager *resource.ResourceManager, ctx context.Context, resourceRefs []*api.ResourceReference) error {
+	if common.IsMultiUserMode() == false {
+		// Skip authz if not multi-user mode.
+		return nil
+	}
+
+	experimentID := common.GetExperimentIDFromAPIResourceReferences(resourceRefs)
+	if len(experimentID) == 0 {
+		return util.NewBadRequestError(errors.New("Missing experiment"), "Experiment is required for CreateRun/CreateJob.")
+	}
+	return CanAccessExperiment(resourceManager, ctx, experimentID)
+}
+
+func CanAccessNamespaceInResourceReferences(resourceManager *resource.ResourceManager, ctx context.Context, resourceRefs []*api.ResourceReference) error {
+	if common.IsMultiUserMode() == false {
+		// Skip authz if not multi-user mode.
+		return nil
+	}
+
+	namespace := common.GetNamespaceFromAPIResourceReferences(resourceRefs)
+	if len(namespace) == 0 {
+		return util.NewBadRequestError(errors.New("Namespace required in Kubeflow deployment for authorization."), "Namespace required in Kubeflow deployment for authorization.")
+	}
+	err := isAuthorized(resourceManager, ctx, namespace)
+	if err != nil {
+		return util.Wrap(err, "Failed to authorize with API resource references")
+	}
+	return nil
+}
+
+func CanAccessNamespace(resourceManager *resource.ResourceManager, ctx context.Context, namespace string) error {
+	if common.IsMultiUserMode() == false {
+		// Skip authz if not multi-user mode.
+		return nil
+	}
+
+	if len(namespace) == 0 {
+		return util.NewBadRequestError(errors.New("Namespace required for authorization."), "Namespace required for authorization.")
+	}
+	err := isAuthorized(resourceManager, ctx, namespace)
+	if err != nil {
+		return util.Wrap(err, "Failed to authorize namespace")
+	}
+	return nil
+}
+
+// isAuthorized verified whether the user identity, which is contains in the context object,
+// can access the target namespace. If the returned error is nil, the authorization passes.
+// Otherwise, Authorization fails with a non-nil error.
+func isAuthorized(resourceManager *resource.ResourceManager, ctx context.Context, namespace string) error {
+	userIdentity, err := getUserIdentity(ctx)
+	if err != nil {
+		return util.Wrap(err, "Bad request.")
+	}
+
+	if len(userIdentity) == 0 {
+		return util.NewBadRequestError(errors.New("Request header error: user identity is empty."), "Request header error: user identity is empty.")
+	}
+
+	isAuthorized, err := resourceManager.IsRequestAuthorized(userIdentity, namespace)
+	if err != nil {
+		return util.Wrap(err, "Authorization failure.")
+	}
+
+	if isAuthorized == false {
+		glog.Infof("Unauthorized access for %s to namespace %s", userIdentity, namespace)
+		return util.NewBadRequestError(errors.New("Unauthorized access for "+userIdentity+" to namespace "+namespace), "Unauthorized access for "+userIdentity+" to namespace "+namespace)
+	}
+
+	glog.Infof("Authorized user %s in namespace %s", userIdentity, namespace)
 	return nil
 }

@@ -22,10 +22,21 @@ ConditionOperator = namedtuple('ConditionOperator', 'operator operand1 operand2'
 PipelineParamTuple = namedtuple('PipelineParamTuple', 'name op pattern')
 
 
-def sanitize_k8s_name(name):
-    """From _make_kubernetes_name
-      sanitize_k8s_name cleans and converts the names in the workflow.
-    """
+def sanitize_k8s_name(name, allow_capital_underscore=False):
+  """From _make_kubernetes_name
+    sanitize_k8s_name cleans and converts the names in the workflow.
+
+  Args:
+    name: original name,
+    allow_capital_underscore: whether to allow capital letter and underscore
+      in this name.
+
+  Returns:
+    sanitized name.
+  """
+  if allow_capital_underscore:
+    return re.sub('-+', '-', re.sub('[^-_0-9A-Za-z]+', '-', name)).lstrip('-').rstrip('-')
+  else:
     return re.sub('-+', '-', re.sub('[^-0-9a-z]+', '-', name.lower())).lstrip('-').rstrip('-')
 
 
@@ -42,7 +53,7 @@ def match_serialized_pipelineparam(payload: str):
   for match in matches:
       pattern = '{{pipelineparam:op=%s;name=%s}}' % (match[0], match[1])
       param_tuples.append(PipelineParamTuple(
-                          name=sanitize_k8s_name(match[1]), 
+                          name=sanitize_k8s_name(match[1], True),
                           op=sanitize_k8s_name(match[0]), 
                           pattern=pattern))
   return param_tuples
@@ -101,22 +112,15 @@ def extract_pipelineparams_from_any(payload) -> List['PipelineParam']:
   # dict
   if isinstance(payload, dict):
     pipeline_params = []
-    for item in payload.values():
-      pipeline_params += extract_pipelineparams_from_any(item)
+    for key, value in payload.items():
+      pipeline_params += extract_pipelineparams_from_any(key)
+      pipeline_params += extract_pipelineparams_from_any(value)
     return list(set(pipeline_params))
 
-  # k8s swagger object
-  if hasattr(payload, 'swagger_types') and isinstance(payload.swagger_types, dict):
+  # k8s OpenAPI object
+  if hasattr(payload, 'attribute_map') and isinstance(payload.attribute_map, dict):
     pipeline_params = []
-    for key in payload.swagger_types.keys():
-      pipeline_params += extract_pipelineparams_from_any(getattr(payload, key))
-
-    return list(set(pipeline_params))
-
-  # k8s openapi object
-  if hasattr(payload, 'openapi_types') and isinstance(payload.openapi_types, dict):
-    pipeline_params = []
-    for key in payload.openapi_types.keys():
+    for key in payload.attribute_map:
       pipeline_params += extract_pipelineparams_from_any(getattr(payload, key))
 
     return list(set(pipeline_params))

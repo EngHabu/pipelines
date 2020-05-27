@@ -75,11 +75,11 @@ For better readability and integrations with the sample test infrastructure, sam
 * The sample file should be either `*.py` or `*.ipynb`, and its file name is consistent with its directory name.
 * For `*.py` sample, it's recommended to have a main invoking `kfp.compiler.Compiler().compile()` to compile the 
 pipeline function into pipeline yaml spec.
-* For `*.ipynb` sample, parameters (e.g., `experiment_name` and `project_name`)
+* For `*.ipynb` sample, parameters (e.g., `project_name`)
 should be defined in a dedicated cell and tagged as parameter. 
 (If the author would like the sample test infra to run it by setting the `run_pipeline` flag to True in 
-the associated `config.yaml` file, the sample test infra will expect a parameter `experiment_name`
-to inject so that it can run in the sample test experiment.)
+the associated `config.yaml` file, the sample test infra will expect the sample to use the
+`kfp.Client().create_run_from_pipeline_func` method for starting the run so that the sample test can watch the run.)
 Detailed guideline is 
 [here](https://github.com/nteract/papermill). Also, all the environment setup and 
 preparation should be within the notebook, such as by `!pip install packages` 
@@ -89,7 +89,7 @@ preparation should be within the notebook, such as by `!pip install packages`
 Here are the ordered steps to add the sample tests for samples. 
 Only the core samples are expected to be added to the sample test infrastructure.
 
-1. Make sure the sample follows the [sample conventions](#sample-conventions).
+1. Make sure the sample follows the [sample conventions](#sample-contribution).
 2. If the sample requires argument inputs, they can be specified in a config yaml file
 placed under `test/sample-test/configs`. See 
 [`xgboost_training_cm.config.yaml`](https://github.com/kubeflow/pipelines/blob/master/test/sample-test/configs/xgboost_training_cm.config.yaml) 

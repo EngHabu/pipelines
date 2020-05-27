@@ -17,11 +17,12 @@ syntax = "proto3";
 option go_package = "github.com/kubeflow/pipelines/backend/api/go_client";
 package api;
 
+import "backend/api/error.proto";
+import "backend/api/resource_reference.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 import "protoc-gen-swagger/options/annotations.proto";
-import "backend/api/error.proto";
 
 option (grpc.gateway.protoc_gen_swagger.options.openapiv2_swagger) = {
   responses: {
@@ -58,6 +59,7 @@ option (grpc.gateway.protoc_gen_swagger.options.openapiv2_swagger) = {
 };
 
 service ExperimentService {
+  //Create a new experiment.
   rpc CreateExperiment(CreateExperimentRequest) returns (Experiment) {
     option (google.api.http) = {
       post: "/apis/v1beta1/experiments"
@@ -65,32 +67,49 @@ service ExperimentService {
     };
   }
 
+  //Find a specific experiment by ID.
   rpc GetExperiment(GetExperimentRequest) returns (Experiment) {
     option (google.api.http) = {
       get: "/apis/v1beta1/experiments/{id}"
     };
   }
 
+  //Find all experiments.
   rpc ListExperiment(ListExperimentsRequest) returns (ListExperimentsResponse) {
     option (google.api.http) = {
       get: "/apis/v1beta1/experiments"
     };
   }
 
+  //Delete an experiment.
   rpc DeleteExperiment(DeleteExperimentRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/apis/v1beta1/experiments/{id}"
     };
   }
+
+  //Archive an experiment.
+  rpc ArchiveExperiment(ArchiveExperimentRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/apis/v1beta1/experiments/{id}:archive"
+    };
+  }
+
+  //Restore an archived experiment.
+  rpc UnarchiveExperiment(UnarchiveExperimentRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/apis/v1beta1/experiments/{id}:unarchive"
+    };
+  }
 }
 
 message CreateExperimentRequest {
-  // The experiment to be created
+  // The experiment to be created.
   Experiment experiment = 1;
 }
 
 message GetExperimentRequest {
-  // The ID of the experiment to be retrieved
+  // The ID of the experiment to be retrieved.
   string id = 1;
 }
 
@@ -102,9 +121,15 @@ message ListExperimentsRequest {
   // Ascending by default.
   string sort_by = 3;
 
-  // A base-64 encoded, JSON-serialized Filter protocol buffer (see
-  // filter.proto).
+  // A url-encoded, JSON-serialized Filter protocol buffer (see
+  // [filter.proto](https://github.com/kubeflow/pipelines/
+  // blob/master/backend/api/filter.proto)).
   string filter = 4;
+
+  // What resource reference to filter on.
+  // For Experiment, the only valid resource type is Namespace. An sample query string could be
+  // resource_reference_key.type=NAMESPACE&resource_reference_key.id=ns1
+  ResourceKey resource_reference_key = 5;
 }
 
 message ListExperimentsResponse {
@@ -118,7 +143,7 @@ message ListExperimentsResponse {
   string next_page_token = 2;
 }
 
-message DeleteExperimentRequest{
+message DeleteExperimentRequest {
   // The ID of the experiment to be deleted.
   string id = 1;
 }
@@ -131,8 +156,28 @@ message Experiment {
   string name = 2;
 
   // Optional input field. Describing the purpose of the experiment
-  string description =3;
+  string description = 3;
 
   // Output. The time that the experiment created.
   google.protobuf.Timestamp created_at = 4;
+
+  // Optional input field. Specify which resource this run belongs to.
+  // For Experiment, the only valid resource reference is a single Namespace.
+  repeated ResourceReference resource_references = 5;
+
+  enum StorageState {
+    STORAGESTATE_UNSPECIFIED = 0;
+    STORAGESTATE_AVAILABLE = 1;
+    STORAGESTATE_ARCHIVED = 2;
+  }
+
+  StorageState storage_state = 6;
+}
+
+message ArchiveExperimentRequest {
+  string id = 1;
+}
+
+message UnarchiveExperimentRequest {
+  string id = 1;
 }

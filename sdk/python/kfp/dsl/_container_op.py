@@ -16,7 +16,6 @@ import re
 import warnings
 from typing import Any, Dict, List, TypeVar, Union, Callable, Optional, Sequence
 
-from argo.models import V1alpha1ArtifactLocation
 from kubernetes.client import V1Toleration, V1Affinity
 from kubernetes.client.models import (
     V1Container, V1EnvVar, V1EnvFromSource, V1SecurityContext, V1Probe,
@@ -25,7 +24,7 @@ from kubernetes.client.models import (
 )
 
 from . import _pipeline_param
-from ..components._structures import ComponentSpec
+from ..components.structures import ComponentSpec, ExecutionOptionsSpec, CachingStrategySpec
 
 # generics
 T = TypeVar('T')
@@ -130,16 +129,21 @@ class Container(V1Container):
     """
     """
     Attributes:
-      swagger_types (dict): The key is attribute name
-                            and the value is attribute type.
       attribute_map (dict): The key is attribute name
                             and the value is json key in definition.
     """
-    # remove `name` from swagger_types so `name` is not generated in the JSON
-    swagger_types = {
-        key: value
-        for key, value in V1Container.swagger_types.items() if key != 'name'
-    }
+    # remove `name` from attribute_map, swagger_types and openapi_types so `name` is not generated in the JSON
+
+    if hasattr(V1Container, 'swagger_types'):
+        swagger_types = {
+            key: value
+            for key, value in V1Container.swagger_types.items() if key != 'name'
+        }
+    if hasattr(V1Container, 'openapi_types'):
+        openapi_types = {
+            key: value
+            for key, value in V1Container.openapi_types.items() if key != 'name'
+        }
     attribute_map = {
         key: value
         for key, value in V1Container.attribute_map.items() if key != 'name'
@@ -572,9 +576,12 @@ class UserContainer(Container):
     # adds `mirror_volume_mounts` to `UserContainer` swagger definition
     # NOTE inherits definition from `V1Container` rather than `Container`
     #      because `Container` has no `name` property.
-    swagger_types = dict(
-        **V1Container.swagger_types, mirror_volume_mounts='bool')
-
+    if hasattr(V1Container, 'swagger_types'):
+        swagger_types = dict(
+            **V1Container.swagger_types, mirror_volume_mounts='bool')
+    if hasattr(V1Container, 'openapi_types'):
+        openapi_types = dict(
+            **V1Container.openapi_types, mirror_volume_mounts='bool')
     attribute_map = dict(
         **V1Container.attribute_map, mirror_volume_mounts='mirrorVolumeMounts')
 
@@ -697,7 +704,7 @@ class BaseOp(object):
                     to deploy before the `main` container.
           sidecars: the list of `Sidecar` objects describing the sidecar containers to deploy
                     together with the `main` container.
-          is_exit_handler: Whether it is used as an exit handler.
+          is_exit_handler: Deprecated.
         """
 
         valid_name_regex = r'^[A-Za-z][A-Za-z0-9\s_-]*$'
@@ -705,6 +712,9 @@ class BaseOp(object):
             raise ValueError(
                 'Only letters, numbers, spaces, "_", and "-"  are allowed in name. Must begin with letter: %s'
                 % (name))
+
+        if is_exit_handler:
+            warnings.warn('is_exit_handler=True is no longer needed.', DeprecationWarning)
 
         self.is_exit_handler = is_exit_handler
 
@@ -766,9 +776,9 @@ class BaseOp(object):
           from kfp.gcp import use_gcp_secret
           task = (
             train_op(...)
-              .set_memory_request('1GB')
+              .set_memory_request('1G')
               .apply(use_gcp_secret('user-gcp-sa'))
-              .set_memory_limit('2GB')
+              .set_memory_limit('2G')
           )
         """
         return mod_func(self) or self
@@ -925,14 +935,6 @@ class ContainerOp(BaseOp):
             description='hello world')
         def foo_pipeline(tag: str, pull_image_policy: str):
 
-            # configures artifact location
-            artifact_location = dsl.ArtifactLocation.s3(
-                                    bucket="foobar",
-                                    endpoint="minio-service:9000",
-                                    insecure=True,
-                                    access_key_secret=V1SecretKeySelector(name="minio", key="accesskey"),
-                                    secret_key_secret=V1SecretKeySelector(name="minio", key="secretkey"))
-
             # any attributes can be parameterized (both serialized string or actual PipelineParam)
             op = dsl.ContainerOp(name='foo', 
                                 image='busybox:%s' % tag,
@@ -942,11 +944,10 @@ class ContainerOp(BaseOp):
                                 sidecars=[dsl.Sidecar('print', 'busybox:latest', command='echo "hello"')],
                                 # pass in k8s container kwargs
                                 container_kwargs={'env': [V1EnvVar('foo', 'bar')]},
-                                # configures artifact location
-                                artifact_location=artifact_location)
+            )
 
             # set `imagePullPolicy` property for `container` with `PipelineParam` 
-            op.container.set_pull_image_policy(pull_image_policy)
+            op.container.set_image_pull_policy(pull_image_policy)
 
             # add sidecar with parameterized image tag
             # sidecar follows the argo sidecar swagger spec
@@ -971,7 +972,6 @@ class ContainerOp(BaseOp):
       artifact_argument_paths: List[InputArgumentPath] = None,
       file_outputs: Dict[str, str] = None,
       output_artifact_paths: Dict[str, str]=None,
-      artifact_location: V1alpha1ArtifactLocation=None,
       is_exit_handler=False,
       pvolumes: Dict[str, V1Volume] = None,
     ):
@@ -1003,17 +1003,14 @@ class ContainerOp(BaseOp):
               It has the following default artifact paths during compile time.
               {'mlpipeline-ui-metadata': '/mlpipeline-ui-metadata.json',
                'mlpipeline-metrics': '/mlpipeline-metrics.json'}
-          artifact_location: configures the default artifact location for artifacts
-               in the argo workflow template. Must be a `V1alpha1ArtifactLocation`
-               object.
-          is_exit_handler: Whether it is used as an exit handler.
+          is_exit_handler: Deprecated. This is no longer needed.
           pvolumes: Dictionary for the user to match a path on the op's fs with a
               V1Volume or it inherited type.
               E.g {"/my/path": vol, "/mnt": other_op.pvolumes["/output"]}.
         """
 
         super().__init__(name=name, init_containers=init_containers, sidecars=sidecars, is_exit_handler=is_exit_handler)
-        self.attrs_with_pipelineparams = BaseOp.attrs_with_pipelineparams + ['_container', 'artifact_location', 'artifact_arguments'] #Copying the BaseOp class variable!
+        self.attrs_with_pipelineparams = BaseOp.attrs_with_pipelineparams + ['_container', 'artifact_arguments'] #Copying the BaseOp class variable!
 
         input_artifact_paths = {}
         artifact_arguments = {}
@@ -1088,9 +1085,12 @@ class ContainerOp(BaseOp):
         self.artifact_arguments = artifact_arguments
         self.file_outputs = file_outputs
         self.output_artifact_paths = output_artifact_paths or {}
-        self.artifact_location = artifact_location
 
         self._metadata = None
+
+        self.execution_options = ExecutionOptionsSpec(
+            caching_strategy=CachingStrategySpec(),
+        )
 
         self.outputs = {}
         if file_outputs:
@@ -1098,10 +1098,15 @@ class ContainerOp(BaseOp):
                 name: _pipeline_param.PipelineParam(name, op_name=self.name)
                 for name in file_outputs.keys()
             }
-
-        self.output = None
-        if len(self.outputs) == 1:
-            self.output = list(self.outputs.values())[0]
+        
+        # Syntactic sugar: Add task.output attribute if the component has a single output.
+        # TODO: Currently the "MLPipeline UI Metadata" output is removed from outputs to preserve backwards compatibility.
+        # Maybe stop excluding it from outputs, but rather exclude it from unique_outputs.
+        unique_outputs = set(self.outputs.values())
+        if len(unique_outputs) == 1:
+            self.output = list(unique_outputs)[0]
+        else:
+            self.output = _MultipleOutputsError()
 
         self.pvolumes = {}
         self.add_pvolumes(pvolumes)
@@ -1163,10 +1168,6 @@ class ContainerOp(BaseOp):
                         output_type = output_meta.type
                 self.outputs[output].param_type = output_type
 
-            self.output = None
-            if len(self.outputs) == 1:
-                self.output = list(self.outputs.values())[0]
-
     def add_pvolumes(self,
                      pvolumes: Dict[str, V1Volume] = None):
         """Updates the existing pvolumes dict, extends volumes and volume_mounts
@@ -1182,7 +1183,8 @@ class ContainerOp(BaseOp):
                     self.dependent_names.extend(pvolume.dependent_names)
                 else:
                     pvolume = PipelineVolume(volume=pvolume)
-                self.pvolumes[mount_path] = pvolume.after(self)
+                pvolume = pvolume.after(self)
+                self.pvolumes[mount_path] = pvolume
                 self.add_volume(pvolume)
                 self._container.add_volume_mount(V1VolumeMount(
                     name=pvolume.name,
@@ -1198,3 +1200,15 @@ class ContainerOp(BaseOp):
 # proxy old ContainerOp properties to ContainerOp.container
 # with PendingDeprecationWarning.
 ContainerOp = _proxy_container_op_props(ContainerOp)
+
+
+class _MultipleOutputsError:
+    @staticmethod
+    def raise_error():
+        raise RuntimeError('This task has multiple outputs. Use `task.outputs[<output name>]` dictionary to refer to the one you need.')
+
+    def __getattribute__(self, name):
+        _MultipleOutputsError.raise_error()
+
+    def __str__(self):
+        _MultipleOutputsError.raise_error()

@@ -17,7 +17,6 @@ from .cli.cli import main
 # TODO(hongyes): add more commands:
 # kfp compile (migrate from dsl-compile)
 # kfp experiment (manage experiments)
-# kfp pipeline (manage pipelines)
 
 if __name__ == '__main__':
     main()

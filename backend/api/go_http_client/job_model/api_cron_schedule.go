@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,7 +31,8 @@ import (
 // swagger:model apiCronSchedule
 type APICronSchedule struct {
 
-	// The cron string. For details how to compose a cron, visit ttps://en.wikipedia.org/wiki/Cron
+	// The cron string. For details how to compose a cron, visit
+	// ttps://en.wikipedia.org/wiki/Cron
 	Cron string `json:"cron,omitempty"`
 
 	// The end time of the cron job

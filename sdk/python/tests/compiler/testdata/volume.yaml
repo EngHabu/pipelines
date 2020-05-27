@@ -40,6 +40,9 @@ spec:
       - mountPath: /secret/gcp-credentials
         name: gcp-credentials
     name: download
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
     outputs:
       artifacts:
       - name: download-downloaded
@@ -48,6 +51,10 @@ spec:
       - name: download-downloaded
         valueFrom:
           path: /tmp/results.txt
+    volumes:
+    - name: gcp-credentials
+      secret:
+        secretName: user-gcp-sa
   - container:
       args:
       - echo {{inputs.parameters.download-downloaded}}
@@ -59,6 +66,9 @@ spec:
       parameters:
       - name: download-downloaded
     name: echo
+    metadata:
+      labels:
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
   - dag:
       tasks:
       - name: download
@@ -72,7 +82,3 @@ spec:
         name: echo
         template: echo
     name: volume
-  volumes:
-  - name: gcp-credentials
-    secret:
-      secretName: user-gcp-sa

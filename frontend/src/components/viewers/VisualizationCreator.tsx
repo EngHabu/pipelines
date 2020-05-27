@@ -29,6 +29,7 @@ import 'brace/ext/language_tools';
 import 'brace/mode/json';
 import 'brace/mode/python';
 import 'brace/theme/github';
+import Button from '@material-ui/core/Button';
 
 export interface VisualizationCreatorConfig extends ViewerConfig {
   allowCustomVisualizations?: boolean;
@@ -36,6 +37,8 @@ export interface VisualizationCreatorConfig extends ViewerConfig {
   isBusy?: boolean;
   // Function called to generate a visualization.
   onGenerate?: (visualizationArguments: string, source: string, type: ApiVisualizationType) => void;
+  // Facilitate testing by not collapsing by default.
+  collapsedInitially?: boolean;
 }
 
 interface VisualizationCreatorProps {
@@ -44,6 +47,7 @@ interface VisualizationCreatorProps {
 }
 
 interface VisualizationCreatorState {
+  expanded: boolean;
   // arguments is expected to be a JSON object in string form.
   arguments: string;
   code: string;
@@ -52,14 +56,12 @@ interface VisualizationCreatorState {
 }
 
 class VisualizationCreator extends Viewer<VisualizationCreatorProps, VisualizationCreatorState> {
-  constructor(props: VisualizationCreatorProps) {
-    super(props);
-    this.state = {
-      arguments: '',
-      code: '',
-      source: '',
-    };
-  }
+  public state: VisualizationCreatorState = {
+    expanded: !this.props.configs[0]?.collapsedInitially,
+    arguments: '',
+    code: '',
+    source: '',
+  };
 
   public getDisplayName(): string {
     return 'Visualization Creator';
@@ -82,87 +84,112 @@ class VisualizationCreator extends Viewer<VisualizationCreatorProps, Visualizati
     // is provided.
     const hasSourceAndSelectedType = source.length > 0 && !!selectedType;
     const isCustomTypeAndHasCode = selectedType === ApiVisualizationType.CUSTOM && code.length > 0;
-    const canGenerate = !isBusy && !!onGenerate && (hasSourceAndSelectedType || isCustomTypeAndHasCode);
+    const canGenerate =
+      !isBusy && !!onGenerate && (hasSourceAndSelectedType || isCustomTypeAndHasCode);
 
-    const argumentsPlaceholder =
-      this.getArgumentPlaceholderForType(selectedType);
+    const argumentsPlaceholder = this.getArgumentPlaceholderForType(selectedType);
 
-    return <div
-      style={{
-        width: this.props.maxWidth || 600
-      }}>
-      <FormControl style={{ width: '100%' }}>
-        <InputLabel htmlFor='visualization-type-selector'>Type</InputLabel>
-        <Select
-          value={selectedType}
-          inputProps={{
-            id: 'visualization-type-selector',
-            name: 'Visualization Type',
-          }}
-          style={{
-            minHeight: 60,
-            width: '100%',
-          }}
-          onChange={(e: React.ChangeEvent<{ name?: string; value: unknown }>) => {
-            this.setState({ selectedType: e.target.value as ApiVisualizationType });
-          }}
+    if (!this.state.expanded) {
+      return (
+        <Button variant='text' onClick={this.handleExpansion}>
+          create visualizations manually
+        </Button>
+      );
+    }
+
+    return (
+      <div
+        style={{
+          width: this.props.maxWidth || 600,
+        }}
+      >
+        <FormControl style={{ width: '100%' }}>
+          <InputLabel htmlFor='visualization-type-selector'>Type</InputLabel>
+          <Select
+            value={selectedType}
+            inputProps={{
+              id: 'visualization-type-selector',
+              name: 'Visualization Type',
+            }}
+            style={{
+              minHeight: 60,
+              width: '100%',
+            }}
+            onChange={(e: React.ChangeEvent<{ name?: string; value: unknown }>) => {
+              this.setState({ selectedType: e.target.value as ApiVisualizationType });
+            }}
+            disabled={isBusy}
+          >
+            {this.getAvailableTypes(allowCustomVisualizations).map((key: string) => (
+              <MenuItem key={key} value={ApiVisualizationType[key]}>
+                {ApiVisualizationType[key]}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <Input
+          label='Source'
+          variant={'outlined'}
+          value={source}
           disabled={isBusy}
-        >
-          {this.getAvailableTypes(allowCustomVisualizations).map((key: string) => (
-            <MenuItem key={key} value={ApiVisualizationType[key]}>
-              {ApiVisualizationType[key]}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
-
-      <Input label='Source' variant={'outlined'} value={source} disabled={isBusy}
-        placeholder='File path or path pattern of data within GCS.'
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => this.setState({ source: e.target.value })} />
-      {selectedType === ApiVisualizationType.CUSTOM &&
-        <div>
-          <InputLabel>Custom Visualization Code</InputLabel>
-          <Editor
-            placeholder='Python code that will be run to generate visualization.<br><br>To access the source value (if provided), reference the variable "source".<br>To access any provided arguments, reference the variable "variables" (it is a dict object).'
-            width='100%' height='175px' mode='python' theme='github'
-            value={code}
-            onChange={(value: string) => this.setState({ code: value })}
-            editorProps={{ $blockScrolling: true }}
-            enableLiveAutocompletion={true}
-            enableBasicAutocompletion={true}
-            highlightActiveLine={true} showGutter={true}
-          />
-        </div>
-      }
-      {!!selectedType &&
-        <div>
-          <InputLabel>Arguments (Optional)</InputLabel>
-          <Editor
-            placeholder={argumentsPlaceholder}
-            height={`${argumentsPlaceholder.split('<br>').length * 14}px`}
-            width='100%' mode='json' theme='github'
-            value={_arguments}
-            onChange={(value: string) => this.setState({ arguments: value })}
-            editorProps={{ $blockScrolling: true }}
-            highlightActiveLine={true} showGutter={true}
-          />
-        </div>
-      }
-      <BusyButton title='Generate Visualization' busy={isBusy} disabled={!canGenerate}
-        onClick={() => {
-          if (onGenerate && selectedType) {
-            const specifiedArguments: any = JSON.parse(_arguments || '{}');
-            if (selectedType === ApiVisualizationType.CUSTOM) {
-              specifiedArguments.code = code.split('\n');
-            }
-            onGenerate(
-              JSON.stringify(specifiedArguments),
-              source,
-              selectedType
-            );
+          placeholder='File path or path pattern of data within GCS.'
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            this.setState({ source: e.target.value })
           }
-        }} />
-    </div>;
+        />
+        {selectedType === ApiVisualizationType.CUSTOM && (
+          <div>
+            <InputLabel>Custom Visualization Code</InputLabel>
+            <Editor
+              placeholder='Python code that will be run to generate visualization.<br><br>To access the source value (if provided), reference the variable "source".<br>To access any provided arguments, reference the variable "variables" (it is a dict object).'
+              width='100%'
+              height='175px'
+              mode='python'
+              theme='github'
+              value={code}
+              onChange={(value: string) => this.setState({ code: value })}
+              editorProps={{ $blockScrolling: true }}
+              enableLiveAutocompletion={true}
+              enableBasicAutocompletion={true}
+              highlightActiveLine={true}
+              showGutter={true}
+            />
+          </div>
+        )}
+        {!!selectedType && (
+          <div>
+            <InputLabel>Arguments (Optional)</InputLabel>
+            <Editor
+              placeholder={argumentsPlaceholder}
+              height={`${argumentsPlaceholder.split('<br>').length * 14}px`}
+              width='100%'
+              mode='json'
+              theme='github'
+              value={_arguments}
+              onChange={(value: string) => this.setState({ arguments: value })}
+              editorProps={{ $blockScrolling: true }}
+              highlightActiveLine={true}
+              showGutter={true}
+            />
+          </div>
+        )}
+        <BusyButton
+          title='Generate Visualization'
+          busy={isBusy}
+          disabled={!canGenerate}
+          onClick={() => {
+            if (onGenerate && selectedType) {
+              const specifiedArguments: any = JSON.parse(_arguments || '{}');
+              if (selectedType === ApiVisualizationType.CUSTOM) {
+                specifiedArguments.code = code.split('\n');
+              }
+              onGenerate(JSON.stringify(specifiedArguments), source, selectedType);
+            }
+          }}
+        />
+      </div>
+    );
   }
 
   /*
@@ -171,14 +198,14 @@ class VisualizationCreator extends Viewer<VisualizationCreatorProps, Visualizati
     manner in which TypeScript is compiled to Javascript, enums are duplicated
     iff they included an _ in the proto file. This filters out those duplicate
     keys that are generated by the complication from TypeScript to JavaScript.
-  
+
     For example:
     export enum ApiVisualizationType {
       ROCCURVE = <any> 'ROC_CURVE'
     }
-  
+
     Object.keys(ApiVisualizationType) = ['ROCCURVE', 'ROC_CURVE'];
-  
+
     Additional details can be found here:
     https://www.typescriptlang.org/play/#code/KYOwrgtgBAggDgSwGoIM5gIYBsEC8MAuCA9iACoCecwUA3gLABQUUASgPIDCnAqq0gFEoAXigAeDCAoA+AOQdOAfV78BsgDRMAvkyYBjUqmJZgAOizEA5gAp4yNJhz4ipStQCUAbiA
   */
@@ -194,8 +221,8 @@ class VisualizationCreator extends Viewer<VisualizationCreatorProps, Visualizati
   }
 
   private getArgumentPlaceholderForType(type: ApiVisualizationType | undefined): string {
-    let placeholder= 'Arguments, provided as JSON, to be used during visualization generation.';
-    switch(type) {
+    let placeholder = 'Arguments, provided as JSON, to be used during visualization generation.';
+    switch (type) {
       case ApiVisualizationType.ROCCURVE:
         // These arguments are not yet used as the ROC curve visualization is
         // still based on the Kubeflow Pipelines component.
@@ -220,7 +247,7 @@ class VisualizationCreator extends Viewer<VisualizationCreatorProps, Visualizati
       case ApiVisualizationType.TFMA:
         placeholder = `{
         \t"slicing_column: string | null
-        }`;  
+        }`;
         break;
       case ApiVisualizationType.TABLE:
         placeholder = '{\n\t"headers": array\n}';
@@ -229,14 +256,24 @@ class VisualizationCreator extends Viewer<VisualizationCreatorProps, Visualizati
         placeholder = '{\n\t"key": any\n}';
         break;
     }
-    return placeholder
-      // Replaces newline escape character with HTML break so placeholder can
-      // support multiple lines.
-      .replace(new RegExp('\n', 'g'), '<br>')
-      // Replaces tab escape character with 4 blank spaces so placeholder can
-      // support indentation.
-      .replace(new RegExp('\t', 'g'), '&nbsp&nbsp&nbsp&nbsp');
+    return (
+      placeholder
+        // Replaces newline escape character with HTML break so placeholder can
+        // support multiple lines.
+        // eslint-disable-next-line no-control-regex
+        .replace(new RegExp('\n', 'g'), '<br>')
+        // Replaces tab escape character with 4 blank spaces so placeholder can
+        // support indentation.
+        // eslint-disable-next-line no-control-regex
+        .replace(new RegExp('\t', 'g'), '&nbsp&nbsp&nbsp&nbsp')
+    );
   }
+
+  private handleExpansion = () => {
+    this.setState({
+      expanded: true,
+    });
+  };
 }
 
 export default VisualizationCreator;

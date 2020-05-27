@@ -12,12 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ._metadata import _extract_component_metadata
+from deprecated.sphinx import deprecated
 from ._pipeline_param import PipelineParam
 from .types import check_types, InconsistentTypeException
 from ._ops_group import Graph
 import kfp
 
+
+@deprecated(
+  version='0.2.6',
+  reason='This decorator does not seem to be used, so we deprecate it. If you need this decorator, please create an issue at https://github.com/kubeflow/pipelines/issues',
+)
 def python_component(name, description=None, base_image=None, target_component_file: str = None):
   """Decorator for Python component functions.
   This decorator adds the metadata to the function object itself.
@@ -67,7 +72,8 @@ def component(func):
   from functools import wraps
   @wraps(func)
   def _component(*args, **kargs):
-    component_meta = _extract_component_metadata(func)
+    from ..components._python_op import _extract_component_interface
+    component_meta = _extract_component_interface(func)
     if kfp.TYPE_CHECK:
       arg_index = 0
       for arg in args:
@@ -98,11 +104,14 @@ def graph_component(func):
 
   Usage:
   ```python
+  # Warning: caching is tricky when recursion is involved. Please be careful and 
+  # set proper max_cache_staleness in case of infinite loop.
   import kfp.dsl as dsl
   @dsl.graph_component
   def flip_component(flip_result):
     print_flip = PrintOp(flip_result)
     flipA = FlipCoinOp().after(print_flip)
+    flipA.execution_options.caching_strategy.max_cache_staleness = "P0D"
     with dsl.Condition(flipA.output == 'heads'):
       flip_component(flipA.output)
     return {'flip_result': flipA.output}
